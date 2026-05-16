@@ -17,12 +17,3 @@ index d5d2384..1378d30 100644
  ]
  extra_proxy = [
      "prisma==0.11.0",
-@@ -100,7 +100,7 @@ proxy-runtime = [
-     "opentelemetry-api==1.28.0",
-     "opentelemetry-sdk==1.28.0",
-     "opentelemetry-exporter-otlp==1.28.0",
--    "ddtrace==2.19.0",
-+    "ddtrace==2.19.0; platform_machine != 'ppc64le'",
-     "sentry-sdk==2.21.0",
-     "mangum==0.17.0",
-     "azure-ai-contentsafety==1.0.0",
