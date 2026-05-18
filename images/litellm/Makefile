@@ -1,6 +1,6 @@
 REGISTRY?=icr.io/ai-services-private
 IMAGE=litellm
-VERSION?=1.83.10-stable
+VERSION?=1.84.0
 CREDS_ARG := $(if $(and $(REGISTRY_USER),$(REGISTRY_PASSWORD)),--creds="$(REGISTRY_USER):$(REGISTRY_PASSWORD)")
 
 CONTAINER_BUILDER?=podman
@@ -15,3 +15,7 @@ push:
 image-tag:
 	@echo v$(VERSION)
 .PHONY: image-tag
+
+update-patch:
+	cd ./patches && ./pyproject-toml.sh $(VERSION)
+.PHONY: update-patch
