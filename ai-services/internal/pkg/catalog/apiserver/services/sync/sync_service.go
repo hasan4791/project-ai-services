@@ -530,18 +530,18 @@ func (s *SyncService) updateApplicationStatus(ctx context.Context, app *models.A
 }
 
 // getExpectedResourceCounts retrieves expected resource counts from cache.
-func (s *SyncService) getExpectedResourceCounts(catalogID string) *ResourceCounts {
+func (s *SyncService) getExpectedResourceCounts(instanceID string) *ResourceCounts {
 	s.cacheMutex.RLock()
 	defer s.cacheMutex.RUnlock()
 
-	return s.resourceCache[catalogID]
+	return s.resourceCache[instanceID]
 }
 
 // setExpectedResourceCounts stores expected resource counts in cache.
-func (s *SyncService) setExpectedResourceCounts(catalogID string, counts *ResourceCounts) {
+func (s *SyncService) setExpectedResourceCounts(instanceID string, counts *ResourceCounts) {
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
-	s.resourceCache[catalogID] = counts
+	s.resourceCache[instanceID] = counts
 }
 
 // countResourcesFromTemplates counts expected Pods and Secrets from service/component templates.
@@ -674,8 +674,9 @@ func (s *SyncService) extractResourceLabelsFromPodSpec(podSpec *modelpkg.PodSpec
 // validateResourceCounts validates that actual resources match expected counts from templates.
 // Returns error message if validation fails, empty string if all resources are present.
 func (s *SyncService) validateResourceCounts(ctx context.Context, catalogID, instanceID, itemType string, actualPodCount int, rt runtime.Runtime) string {
-	// Get expected counts from cache
-	expectedCounts := s.getExpectedResourceCounts(catalogID)
+	// Cache key combines catalogID and instanceID:
+	cacheKey := catalogID + ":" + instanceID
+	expectedCounts := s.getExpectedResourceCounts(cacheKey)
 
 	// If not in cache, count from templates and cache it
 	if expectedCounts == nil {
@@ -686,7 +687,7 @@ func (s *SyncService) validateResourceCounts(ctx context.Context, catalogID, ins
 			return ""
 		}
 		expectedCounts = counts
-		s.setExpectedResourceCounts(catalogID, counts)
+		s.setExpectedResourceCounts(cacheKey, counts)
 	}
 
 	var errorMessages []string
