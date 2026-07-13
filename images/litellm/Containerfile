@@ -62,14 +62,20 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8
 
 ARG VERSION=${VERSION}
 
-ENV DISABLE_ADMIN_UI=true \
-    LITELLM_NON_ROOT=true
+#ENV DISABLE_ADMIN_UI=true \
+#    LITELLM_NON_ROOT=true
+ENV PRISMA_QUERY_ENGINE_LIBRARY=/app/prisma/libquery_engine-rhel-openssl-3.0.x.so.node \
+    PRISMA_QUERY_ENGINE_BINARY=/app/prisma/query-engine \
+    PRISMA_SCHEMA_ENGINE_BINARY=/app/prisma/schema-engine \
+    PRISMA_ENGINES_CHECKSUM_IGNORE_WARNING="true"
 
 RUN --mount=type=bind,from=builder,source=/wheels,target=/wheels,ro \
     microdnf -y update && \
     microdnf -y install \
         python3.12 \
-        python3.12-pip && \
+        python3.12-pip \
+        libatomic \
+        openssl && \
     python3.12 -m pip install --no-cache-dir --no-index \
 	--find-links=/wheels  \
 	litellm[proxy,semantic-router]==${VERSION} && \
@@ -77,11 +83,15 @@ RUN --mount=type=bind,from=builder,source=/wheels,target=/wheels,ro \
     microdnf remove -y python3.12-pip && \
     microdnf clean all 
 
-USER 1001
+#USER 1001
 
 WORKDIR /app
 
 COPY config ./
+COPY prisma prisma/
+COPY --from=builder /build/litellm-${VERSION}/schema.prisma ./
+
+RUN prisma generate --schema=/app/schema.prisma
 
 EXPOSE 4000
 

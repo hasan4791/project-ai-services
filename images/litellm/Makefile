@@ -8,8 +8,29 @@ TAG?=v$(LITELLM_VERSION)-$(IMAGE_REVISION)
 CREDS_ARG := $(if $(and $(REGISTRY_USER),$(REGISTRY_PASSWORD)),--creds="$(REGISTRY_USER):$(REGISTRY_PASSWORD)")
 
 CONTAINER_BUILDER?=podman
+
+# Dev env vars — override on the command line or export before running
+INSTRUCT_MODEL_NAME?=my-instruct-model
+INSTRUCT_MODEL?=watsonx/ibm/granite-4-h-small
+WATSONX_APIKEY?=
+WATSONX_PROJECT_ID?=
+WATSONX_URL?=https://us-south.ml.cloud.ibm.com
+
+run:
+	$(CONTAINER_BUILDER) run -d \
+		--name litellm-dev \
+		--net host \
+		-e INSTRUCT_MODEL_NAME="$(INSTRUCT_MODEL_NAME)" \
+		-e INSTRUCT_MODEL="$(INSTRUCT_MODEL)" \
+		-e WATSONX_APIKEY="$(WATSONX_APIKEY)" \
+		-e WATSONX_PROJECT_ID="$(WATSONX_PROJECT_ID)" \
+		-e WATSONX_URL="$(WATSONX_URL)" \
+		$(REGISTRY)/$(IMAGE):$(TAG) \
+		litellm -c /app/config.yaml --detailed_debug
+.PHONY: run
+
 build:
-	$(CONTAINER_BUILDER) build -t $(REGISTRY)/$(IMAGE):$(TAG) --build-arg VERSION=$(LITELLM_VERSION) .
+	$(CONTAINER_BUILDER) build --platform linux/ppc64le -t $(REGISTRY)/$(IMAGE):$(TAG) --build-arg VERSION=$(LITELLM_VERSION) .
 .PHONY: build
 
 push:
