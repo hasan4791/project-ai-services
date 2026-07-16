@@ -61,6 +61,42 @@ func (h *AgentHandler) IssueToken(c *gin.Context) {
 	})
 }
 
+// DeleteAgent godoc
+//
+//	@Summary		Delete a registered worker agent
+//	@Description	Removes the agent from the in-memory registry and the database.
+//	@Description	If the agent has an active CommandStream it will be disconnected on its next send/recv.
+//	@Tags			Agents
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			agent_id	path		string	true	"Agent ID to delete"
+//	@Success		200			{object}	map[string]string
+//	@Failure		404			{object}	ErrorResponse	"Agent not found"
+//	@Failure		401			{object}	ErrorResponse	"Unauthorized"
+//	@Failure		501			{object}	ErrorResponse	"AgentGateway not enabled on this server"
+//	@Router			/agents/{agent_id} [delete]
+func (h *AgentHandler) DeleteAgent(c *gin.Context) {
+	if h.reg == nil {
+		c.JSON(http.StatusNotImplemented, ErrorResponse{
+			Error: "AgentGateway is not enabled on this server (start with --agentgateway-port)",
+		})
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "agent_id path parameter is required"})
+		return
+	}
+
+	if err := h.reg.Delete(c.Request.Context(), agentID); err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"deleted": agentID})
+}
+
 // ListAgents godoc
 //
 //	@Summary		List registered worker agents

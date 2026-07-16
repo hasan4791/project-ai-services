@@ -85,6 +85,7 @@ func CreateRouter(authSvc auth.Service, tokenMgr *auth.TokenManager, blacklist r
 	{
 		agents.GET("", agentHandler.ListAgents)
 		agents.POST("/tokens", agentHandler.IssueToken)
+		agents.DELETE("/:agent_id", agentHandler.DeleteAgent)
 	}
 
 	return router

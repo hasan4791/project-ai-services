@@ -134,6 +134,7 @@ spec:
           protocol: TCP
         {{- if ne .Values.backend.agentGatewayPort "0" }}
         - containerPort: {{ .Values.backend.agentGatewayPort }}
+          hostPort: {{ .Values.backend.agentGatewayPort }}
           protocol: TCP
         {{- end }}
       livenessProbe:

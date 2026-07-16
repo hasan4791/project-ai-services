@@ -296,6 +296,19 @@ func (c *Client) IssueAgentToken(agentID string) (string, error) {
 	return resp.Token, nil
 }
 
+// DeleteAgent calls DELETE /api/v1/agents/:agent_id.
+func (c *Client) DeleteAgent(agentID string) error {
+	httpResp, err := c.httpClient.R().
+		Delete("/api/v1/agents/" + agentID)
+	if err != nil {
+		return fmt.Errorf("delete agent request: %w", err)
+	}
+	if httpResp.IsError() {
+		return fmt.Errorf("delete agent failed: HTTP %d: %s", httpResp.StatusCode(), httpResp.String())
+	}
+	return nil
+}
+
 // ListAgents calls GET /api/v1/agents and returns a slice of agent status maps.
 func (c *Client) ListAgents() ([]map[string]any, error) {
 	var resp struct {

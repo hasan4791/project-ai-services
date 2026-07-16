@@ -15,7 +15,7 @@ Use 'issue-token' to generate a bootstrap token before provisioning a new
 Worker LPAR. Copy the returned token into /etc/ai-services/agent.conf on the
 Worker LPAR, then run:
 
-  ai-services bootstrap configure --runtime podman --agent`,
+  ai-services agent start`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -23,6 +23,7 @@ Worker LPAR, then run:
 
 	cmd.AddCommand(newIssueTokenCmd())
 	cmd.AddCommand(newListCmd())
+	cmd.AddCommand(newDeleteCmd())
 
 	return cmd
 }

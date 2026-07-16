@@ -226,6 +226,29 @@ func (r *Registry) Snapshot() []AgentStatusInfo {
 	return out
 }
 
+// Delete removes an agent from the in-memory registry and the database.
+// The active CommandStream (if any) will detect the missing entry and disconnect.
+func (r *Registry) Delete(ctx context.Context, agentID string) error {
+	r.mu.Lock()
+	_, ok := r.agents[agentID]
+	if ok {
+		delete(r.agents, agentID)
+	}
+	r.mu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("agent %s not found", agentID)
+	}
+
+	if r.pool != nil {
+		if _, err := r.pool.Exec(ctx, `DELETE FROM agents WHERE agent_id = $1`, agentID); err != nil {
+			logger.WarningfCtx(ctx, "agent registry: DB delete failed for %s: %v", agentID, err)
+		}
+	}
+
+	return nil
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ──────────────────────────────────────────────────────────────────────────────
