@@ -84,6 +84,7 @@ func CreateRouter(authSvc auth.Service, tokenMgr *auth.TokenManager, blacklist r
 	agents.Use(middleware.AuthMiddleware(tokenMgr, blacklist))
 	{
 		agents.GET("", agentHandler.ListAgents)
+		agents.GET("/:agent_id", agentHandler.GetAgent)
 		agents.POST("/tokens", agentHandler.IssueToken)
 		agents.DELETE("/:agent_id", agentHandler.DeleteAgent)
 	}

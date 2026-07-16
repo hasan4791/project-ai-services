@@ -61,6 +61,47 @@ func (h *AgentHandler) IssueToken(c *gin.Context) {
 	})
 }
 
+// GetAgent godoc
+//
+//	@Summary		Get a registered worker agent by ID
+//	@Description	Returns the live registry status for a single agent.
+//	@Tags			Agents
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			agent_id	path		string	true	"Agent ID"
+//	@Success		200			{object}	AgentInfo
+//	@Failure		404			{object}	ErrorResponse	"Agent not found"
+//	@Failure		401			{object}	ErrorResponse	"Unauthorized"
+//	@Failure		501			{object}	ErrorResponse	"AgentGateway not enabled on this server"
+//	@Router			/agents/{agent_id} [get]
+func (h *AgentHandler) GetAgent(c *gin.Context) {
+	if h.reg == nil {
+		c.JSON(http.StatusNotImplemented, ErrorResponse{
+			Error: "AgentGateway is not enabled on this server (start with --agentgateway-port)",
+		})
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	snap := h.reg.Snapshot()
+	for _, s := range snap {
+		if s.AgentID == agentID {
+			ai := AgentInfo{
+				AgentID: s.AgentID,
+				Status:  string(s.Status),
+				Labels:  s.Labels,
+				ActiveSlots: s.ActiveSlots,
+			}
+			if !s.LastHeartbeat.IsZero() {
+				ai.LastHeartbeat = s.LastHeartbeat.UTC().Format(time.RFC3339)
+			}
+			c.JSON(http.StatusOK, ai)
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, ErrorResponse{Error: "agent " + agentID + " not found"})
+}
+
 // DeleteAgent godoc
 //
 //	@Summary		Delete a registered worker agent
@@ -155,6 +196,7 @@ type AgentInfo struct {
 	Status        string            `json:"status"`
 	Labels        map[string]string `json:"labels"`
 	LastHeartbeat string            `json:"last_heartbeat,omitempty"`
+	ActiveSlots   int               `json:"active_slots"`
 }
 
 // ListAgentsResponse is returned by GET /api/v1/agents.

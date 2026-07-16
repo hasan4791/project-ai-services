@@ -326,3 +326,27 @@ func (c *Client) ListAgents() ([]map[string]any, error) {
 	return resp.Agents, nil
 }
 
+// AgentStatus is the response body from GET /api/v1/agents/:agent_id.
+type AgentStatus struct {
+	AgentID       string            `json:"agent_id"`
+	Status        string            `json:"status"`
+	Labels        map[string]string `json:"labels"`
+	LastHeartbeat string            `json:"last_heartbeat,omitempty"`
+	ActiveSlots   int               `json:"active_slots"`
+}
+
+// GetAgent calls GET /api/v1/agents/:agent_id and returns the live registry entry.
+func (c *Client) GetAgent(agentID string) (AgentStatus, error) {
+	var resp AgentStatus
+	httpResp, err := c.httpClient.R().
+		SetResult(&resp).
+		Get("/api/v1/agents/" + agentID)
+	if err != nil {
+		return AgentStatus{}, fmt.Errorf("get agent request: %w", err)
+	}
+	if httpResp.IsError() {
+		return AgentStatus{}, fmt.Errorf("get agent failed: HTTP %d: %s", httpResp.StatusCode(), httpResp.String())
+	}
+	return resp, nil
+}
+
