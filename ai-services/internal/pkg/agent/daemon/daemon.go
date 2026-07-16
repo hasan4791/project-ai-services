@@ -1,0 +1,370 @@
+// Package daemon implements the worker agent daemon that runs on each LPAR.
+// It connects to the control plane AgentGateway over a bidirectional gRPC stream
+// and executes Podman runtime commands on behalf of the control plane.
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	agentpb "github.com/project-ai-services/ai-services/internal/pkg/agent/proto"
+	"github.com/project-ai-services/ai-services/internal/pkg/logger"
+	podmanRuntime "github.com/project-ai-services/ai-services/internal/pkg/runtime/podman"
+	"github.com/project-ai-services/ai-services/internal/pkg/runtime/types"
+)
+
+const (
+	heartbeatInterval  = 30 * time.Second
+	reconnectBaseDelay = 5 * time.Second
+	reconnectMaxDelay  = 120 * time.Second
+)
+
+// Config holds the configuration for the agent daemon.
+type Config struct {
+	AgentID        string
+	ControlPlaneURL string // e.g. "lpar-0.example.com:9090"
+	PreSharedToken string
+	Labels         map[string]string
+	Capabilities   map[string]string
+}
+
+// Daemon is the worker agent daemon.
+type Daemon struct {
+	cfg Config
+}
+
+// New creates a new Daemon with the provided config.
+func New(cfg Config) *Daemon {
+	return &Daemon{cfg: cfg}
+}
+
+// Run starts the daemon and blocks until ctx is cancelled.
+// It registers with the control plane, then enters a loop that maintains the
+// CommandStream, reconnecting with exponential backoff on disconnection.
+func (d *Daemon) Run(ctx context.Context) error {
+	logger.InfofCtx(ctx, "agent daemon starting: agent_id=%s control_plane=%s", d.cfg.AgentID, d.cfg.ControlPlaneURL)
+
+	conn, err := grpc.NewClient(d.cfg.ControlPlaneURL,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return fmt.Errorf("agent daemon: dial %s: %w", d.cfg.ControlPlaneURL, err)
+	}
+	defer conn.Close()
+
+	client := agentpb.NewAgentGatewayClient(conn)
+
+	// Register once.
+	if err := d.register(ctx, client); err != nil {
+		return fmt.Errorf("agent daemon: registration failed: %w", err)
+	}
+
+	// Maintain the CommandStream with reconnect loop.
+	delay := reconnectBaseDelay
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if err := d.runStream(ctx, client); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			logger.WarningfCtx(ctx, "agent daemon: stream error (%v), reconnecting in %s", err, delay)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			if delay < reconnectMaxDelay {
+				delay *= 2
+			}
+			continue
+		}
+		delay = reconnectBaseDelay
+	}
+}
+
+// register calls AgentGateway.Register once.
+func (d *Daemon) register(ctx context.Context, client agentpb.AgentGatewayClient) error {
+	resp, err := client.Register(ctx, &agentpb.RegisterRequest{
+		AgentId:        d.cfg.AgentID,
+		PreSharedToken: d.cfg.PreSharedToken,
+		Labels:         d.cfg.Labels,
+		Capabilities:   d.cfg.Capabilities,
+	})
+	if err != nil {
+		return err
+	}
+	logger.InfofCtx(ctx, "agent daemon: registered as %s", resp.GetAgentId())
+	return nil
+}
+
+// runStream opens the bidirectional CommandStream, sends a heartbeat as the
+// first message, then continuously processes incoming Commands.
+func (d *Daemon) runStream(ctx context.Context, client agentpb.AgentGatewayClient) error {
+	stream, err := client.CommandStream(ctx)
+	if err != nil {
+		return fmt.Errorf("open stream: %w", err)
+	}
+
+	// Send initial heartbeat so the gateway can identify us.
+	if err := stream.Send(&agentpb.CommandResult{
+		AgentId:     d.cfg.AgentID,
+		IsHeartbeat: true,
+		Success:     true,
+	}); err != nil {
+		return fmt.Errorf("send initial heartbeat: %w", err)
+	}
+
+	// Start the heartbeat goroutine.
+	hbCtx, hbCancel := context.WithCancel(ctx)
+	defer hbCancel()
+	go d.heartbeatLoop(hbCtx, stream)
+
+	// Process incoming Commands.
+	for {
+		cmd, err := stream.Recv()
+		if err == io.EOF {
+			return fmt.Errorf("stream closed by server")
+		}
+		if err != nil {
+			return fmt.Errorf("recv: %w", err)
+		}
+
+		result := d.executeCommand(ctx, cmd)
+		if err := stream.Send(result); err != nil {
+			return fmt.Errorf("send result: %w", err)
+		}
+	}
+}
+
+// heartbeatLoop sends a heartbeat every heartbeatInterval until ctx is done.
+func (d *Daemon) heartbeatLoop(ctx context.Context, stream agentpb.AgentGateway_CommandStreamClient) {
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = stream.Send(&agentpb.CommandResult{
+				AgentId:     d.cfg.AgentID,
+				IsHeartbeat: true,
+				Success:     true,
+			})
+		}
+	}
+}
+
+// executeCommand dispatches a Command to the local Podman runtime and returns
+// the CommandResult.
+func (d *Daemon) executeCommand(ctx context.Context, cmd *agentpb.Command) *agentpb.CommandResult {
+	result, err := d.dispatchToRuntime(ctx, cmd)
+
+	r := &agentpb.CommandResult{
+		CommandId: cmd.GetCommandId(),
+		AgentId:   d.cfg.AgentID,
+	}
+	if err != nil {
+		r.Success = false
+		r.Error = err.Error()
+	} else {
+		r.Success = true
+		r.Data = result
+	}
+	return r
+}
+
+// dispatchToRuntime creates a local Podman client and calls the matching method.
+func (d *Daemon) dispatchToRuntime(ctx context.Context, cmd *agentpb.Command) ([]byte, error) {
+	rt, err := podmanRuntime.NewPodmanClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create podman client: %w", err)
+	}
+
+	switch cmd.GetType() {
+	case agentpb.CommandType_COMMAND_TYPE_LIST_IMAGES:
+		result, err := rt.ListImages()
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_PULL_IMAGE:
+		var p struct{ Image string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.PullImage(p.Image)
+
+	case agentpb.CommandType_COMMAND_TYPE_LIST_PODS:
+		var p struct{ Filters map[string][]string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.ListPods(p.Filters)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_CREATE_POD:
+		var p struct {
+			Body string            `json:"body"`
+			Opts map[string]string `json:"opts"`
+		}
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.CreatePod(strings.NewReader(p.Body), p.Opts)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_DELETE_POD:
+		var p struct {
+			ID    string `json:"id"`
+			Force *bool  `json:"force"`
+		}
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.DeletePod(p.ID, p.Force)
+
+	case agentpb.CommandType_COMMAND_TYPE_STOP_POD:
+		var p struct{ ID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.StopPod(p.ID)
+
+	case agentpb.CommandType_COMMAND_TYPE_START_POD:
+		var p struct{ ID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.StartPod(p.ID)
+
+	case agentpb.CommandType_COMMAND_TYPE_INSPECT_POD:
+		var p struct{ NameOrID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.InspectPod(p.NameOrID)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_POD_EXISTS:
+		var p struct{ NameOrID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.PodExists(p.NameOrID)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_POD_LOGS:
+		var p struct{ NameOrID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.PodLogs(p.NameOrID)
+
+	case agentpb.CommandType_COMMAND_TYPE_GET_POD_RESOURCES:
+		var p struct{ NameOrID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.GetPodResources(p.NameOrID)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_LIST_SECRETS:
+		var p struct{ Filters map[string][]string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.ListSecrets(p.Filters)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_DELETE_SECRET:
+		var p struct{ Name string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.DeleteSecret(p.Name)
+
+	case agentpb.CommandType_COMMAND_TYPE_SECRET_EXISTS:
+		var p struct{ NameOrID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.SecretExists(p.NameOrID)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_DELETE_VOLUME:
+		var p struct{ Name string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.DeleteVolume(p.Name)
+
+	case agentpb.CommandType_COMMAND_TYPE_VOLUME_EXISTS:
+		var p struct{ NameOrID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.VolumeExists(p.NameOrID)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_INSPECT_CONTAINER:
+		var p struct{ NameOrID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.InspectContainer(p.NameOrID)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_CONTAINER_EXISTS:
+		var p struct{ NameOrID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.ContainerExists(p.NameOrID)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_CONTAINER_LOGS:
+		var p struct{ ContainerNameOrID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.ContainerLogs(p.ContainerNameOrID)
+
+	case agentpb.CommandType_COMMAND_TYPE_LIST_ROUTES:
+		result, err := rt.ListRoutes()
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_DELETE_PVCS:
+		var p struct{ AppLabel string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.DeletePVCs(p.AppLabel)
+
+	case agentpb.CommandType_COMMAND_TYPE_GET_SYSTEM_INFO:
+		result, err := rt.GetSystemInfo()
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_RUNTIME_TYPE:
+		return marshalResult(string(types.RuntimeTypePodman), nil)
+
+	default:
+		return nil, fmt.Errorf("unknown command type: %v", cmd.GetType())
+	}
+}
+
+func marshalResult(v any, err error) ([]byte, error) {
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(v)
+}

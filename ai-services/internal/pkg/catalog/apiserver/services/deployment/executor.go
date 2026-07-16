@@ -6,8 +6,11 @@ import (
 
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog"
 	apimodels "github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/models"
+	"github.com/project-ai-services/ai-services/internal/pkg/vars"
+
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/services/deployment/repository/podman"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/db/repository"
+	"github.com/project-ai-services/ai-services/internal/pkg/runtime"
 	podmanRuntime "github.com/project-ai-services/ai-services/internal/pkg/runtime/podman"
 	"github.com/project-ai-services/ai-services/internal/pkg/runtime/types"
 )
@@ -47,11 +50,9 @@ func (e *DeploymentExecutor) ExecuteWithPlan(
 	req apimodels.CreateApplicationRequest,
 	runtimeType types.RuntimeType,
 ) error {
-	// Execute deployment based on runtime type using the provided plan
 	if err := e.executeDeployment(ctx, plan, req, runtimeType); err != nil {
 		return fmt.Errorf("failed to execute deployment: %w", err)
 	}
-
 	return nil
 }
 
@@ -65,6 +66,8 @@ func (e *DeploymentExecutor) executeDeployment(
 	switch runtimeType {
 	case types.RuntimeTypePodman:
 		return e.executePodmanDeployment(ctx, plan, req)
+	case types.RuntimeTypeRemote:
+		return e.executeRemoteDeployment(ctx, plan, req)
 	case types.RuntimeTypeOpenShift:
 		return fmt.Errorf("OpenShift deployment not yet implemented")
 	default:
@@ -72,20 +75,43 @@ func (e *DeploymentExecutor) executeDeployment(
 	}
 }
 
-// executePodmanDeployment executes deployment for Podman runtime.
-// Handles both architecture and standalone service deployments.
+// executePodmanDeployment executes deployment for the local Podman runtime.
 func (e *DeploymentExecutor) executePodmanDeployment(
 	ctx context.Context,
 	plan *DeploymentPlan,
 	req apimodels.CreateApplicationRequest,
 ) error {
-	// Initialize Podman runtime client
 	rt, err := podmanRuntime.NewPodmanClient()
 	if err != nil {
 		return fmt.Errorf("failed to initialize Podman runtime: %w", err)
 	}
+	return e.runDeployer(ctx, rt, plan, req)
+}
 
-	// Create podman deployer
+// executeRemoteDeployment executes deployment via a remote worker agent.
+// It reads the agent selector from the plan's AgentSelector field (if set)
+// and delegates to the RuntimeFactory which must already hold a RemoteRuntime.
+func (e *DeploymentExecutor) executeRemoteDeployment(
+	ctx context.Context,
+	plan *DeploymentPlan,
+	req apimodels.CreateApplicationRequest,
+) error {
+	// The caller (ApplicationService) is responsible for providing the correct
+	// runtime via vars.RuntimeFactory when runtime=remote.  We retrieve it here.
+	rt, err := getRuntimeFromFactory()
+	if err != nil {
+		return fmt.Errorf("failed to get remote runtime: %w", err)
+	}
+	return e.runDeployer(ctx, rt, plan, req)
+}
+
+// runDeployer creates a PodmanDeployer with the provided runtime and executes it.
+func (e *DeploymentExecutor) runDeployer(
+	ctx context.Context,
+	rt runtime.Runtime,
+	plan *DeploymentPlan,
+	req apimodels.CreateApplicationRequest,
+) error {
 	deployer := podman.NewPodmanDeployer(
 		rt,
 		e.catalogProvider,
@@ -93,9 +119,18 @@ func (e *DeploymentExecutor) executePodmanDeployment(
 		e.serviceRepo,
 		e.componentRepo,
 	)
-
-	// Execute deployment - handles both architectures and standalone services
 	return deployer.ExecuteDeployment(ctx, plan, req)
 }
 
 // Made with Bob
+
+// getRuntimeFromFactory obtains a runtime from vars.RuntimeFactory.
+// For RuntimeTypeRemote this returns an error because RemoteRuntime instances
+// are always created by AgentDispatcher.SelectAgent; the caller should have
+// set a concrete runtime on the plan before invoking executeRemoteDeployment.
+func getRuntimeFromFactory() (runtime.Runtime, error) {
+	if vars.RuntimeFactory == nil {
+		return nil, fmt.Errorf("RuntimeFactory not initialised")
+	}
+	return vars.RuntimeFactory.Create("")
+}

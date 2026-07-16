@@ -53,7 +53,7 @@ func ResetCatalogPassword() error {
 		return fmt.Errorf("failed to delete existing catalog pod: %w", err)
 	}
 
-	_, err = executeCatalogDeployment(context.Background(), deployCtx, *opts, passwordHash)
+	_, err = executeCatalogDeployment(context.Background(), deployCtx, *opts, passwordHash, opts.AgentGatewayPort)
 	if err != nil {
 		return fmt.Errorf("failed to deploy catalog pod: %w", err)
 	}

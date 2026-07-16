@@ -46,7 +46,7 @@ func ResetPodmanAuth() error {
 		return fmt.Errorf("failed to delete existing catalog pod: %w", err)
 	}
 
-	_, err = executeCatalogDeployment(context.Background(), deployCtx, *opts, "")
+	_, err = executeCatalogDeployment(context.Background(), deployCtx, *opts, "", opts.AgentGatewayPort)
 	if err != nil {
 		return fmt.Errorf("failed to deploy catalog pod: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/project-ai-services/ai-services/cmd/ai-services/cmd/agent"
 	"github.com/project-ai-services/ai-services/cmd/ai-services/cmd/application"
 	"github.com/project-ai-services/ai-services/cmd/ai-services/cmd/bootstrap"
 	"github.com/project-ai-services/ai-services/cmd/ai-services/cmd/catalog"
@@ -48,4 +49,5 @@ func init() {
 	RootCmd.AddCommand(application.ApplicationCmd)
 	RootCmd.AddCommand(catalog.CatalogCmd())
 	RootCmd.AddCommand(mustgather.MustGatherCmd())
+	RootCmd.AddCommand(agent.AgentCmd())
 }

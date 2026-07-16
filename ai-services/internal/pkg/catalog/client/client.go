@@ -274,3 +274,42 @@ func jwtExpiry(token string) (time.Time, error) {
 }
 
 // Made with Bob
+
+// IssueAgentToken calls POST /api/v1/agents/tokens and returns the token string.
+// The caller writes this token to /etc/ai-services/agent.conf on the Worker LPAR.
+func (c *Client) IssueAgentToken(agentID string) (string, error) {
+	var resp struct {
+		AgentID string `json:"agent_id"`
+		Token   string `json:"token"`
+		Note    string `json:"note"`
+	}
+	httpResp, err := c.httpClient.R().
+		SetBody(map[string]string{"agent_id": agentID}).
+		SetResult(&resp).
+		Post("/api/v1/agents/tokens")
+	if err != nil {
+		return "", fmt.Errorf("issue agent token request: %w", err)
+	}
+	if httpResp.IsError() {
+		return "", fmt.Errorf("issue agent token failed: HTTP %d: %s", httpResp.StatusCode(), httpResp.String())
+	}
+	return resp.Token, nil
+}
+
+// ListAgents calls GET /api/v1/agents and returns a slice of agent status maps.
+func (c *Client) ListAgents() ([]map[string]any, error) {
+	var resp struct {
+		Agents []map[string]any `json:"agents"`
+	}
+	httpResp, err := c.httpClient.R().
+		SetResult(&resp).
+		Get("/api/v1/agents")
+	if err != nil {
+		return nil, fmt.Errorf("list agents request: %w", err)
+	}
+	if httpResp.IsError() {
+		return nil, fmt.Errorf("list agents failed: HTTP %d: %s", httpResp.StatusCode(), httpResp.String())
+	}
+	return resp.Agents, nil
+}
+

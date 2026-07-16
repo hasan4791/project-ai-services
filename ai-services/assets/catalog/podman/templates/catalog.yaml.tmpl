@@ -97,7 +97,11 @@ spec:
         - |
           export ADMIN_PASSWORD=$(cat /etc/secret/catalog-secret/admin-password)
           export DB_PASSWORD=$(cat /etc/secret/catalog-db-secret/db-password)
-          exec /usr/bin/ai-services catalog apiserver --port=8080 --admin-username=admin --admin-password-hash=${ADMIN_PASSWORD} --runtime={{ .Values.backend.runtime }}
+          GATEWAY_FLAG=""
+          if [ "{{ .Values.backend.agentGatewayPort }}" != "0" ] && [ -n "{{ .Values.backend.agentGatewayPort }}" ]; then
+            GATEWAY_FLAG="--agentgateway-port={{ .Values.backend.agentGatewayPort }}"
+          fi
+          exec /usr/bin/ai-services catalog apiserver --port=8080 --admin-username=admin --admin-password-hash=${ADMIN_PASSWORD} --runtime={{ .Values.backend.runtime }} ${GATEWAY_FLAG}
       env:
         - name: GIN_MODE
           value: "release"
@@ -123,9 +127,15 @@ spec:
           value: "{{ .Values.caddy.httpsPort }}"
         - name: DOMAIN_SUFFIX
           value: "{{ .DomainSuffix }}"
+        - name: AGENT_GATEWAY_PORT
+          value: "{{ .Values.backend.agentGatewayPort }}"
       ports:
         - containerPort: 8080
           protocol: TCP
+        {{- if ne .Values.backend.agentGatewayPort "0" }}
+        - containerPort: {{ .Values.backend.agentGatewayPort }}
+          protocol: TCP
+        {{- end }}
       livenessProbe:
         httpGet:
           path: /health

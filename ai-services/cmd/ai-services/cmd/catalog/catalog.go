@@ -1,6 +1,10 @@
 package catalog
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	catalogagent "github.com/project-ai-services/ai-services/cmd/ai-services/cmd/catalog/agent"
+)
 
 // CatalogCmd returns the cobra command for managing the AI Services catalog service, including subcommands for the API server.
 func CatalogCmd() *cobra.Command {
@@ -23,6 +27,7 @@ deploy them, and handle service metadata`,
 	catalogCMD.AddCommand(NewWhoamiCmd())
 	catalogCMD.AddCommand(NewMigrateCmd())
 	catalogCMD.AddCommand(NewInfoCmd())
+	catalogCMD.AddCommand(catalogagent.NewCatalogAgentCmd())
 
 	return catalogCMD
 }

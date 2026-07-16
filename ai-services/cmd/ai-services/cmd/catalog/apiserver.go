@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/project-ai-services/ai-services/cmd/ai-services/cmd/catalog/common"
+	"github.com/project-ai-services/ai-services/internal/pkg/agent/gateway"
+	"github.com/project-ai-services/ai-services/internal/pkg/agent/registry"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver"
 	apirepository "github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/repository"
@@ -63,7 +65,7 @@ func getOrGenerateSecretKey() (string, error) {
 }
 
 // runAPIServer initializes and starts the API server with the provided configuration.
-func runAPIServer(port int, accessTTL, refreshTTL time.Duration, adminUser, adminPassHash string) error {
+func runAPIServer(port int, accessTTL, refreshTTL time.Duration, adminUser, adminPassHash string, agentGatewayPort int) error {
 	secretKey, err := getOrGenerateSecretKey()
 	if err != nil {
 		return err
@@ -119,13 +121,26 @@ func runAPIServer(port int, accessTTL, refreshTTL time.Duration, adminUser, admi
 	tokenMgr := auth.NewTokenManager(secretKey, accessTTL, refreshTTL)
 	authSvc := auth.NewAuthService(userRepo, tokenMgr, blacklist)
 
-	return apiserver.NewAPIserver(apiserver.APIServerOptions{
+	opts := apiserver.APIServerOptions{
 		Port:               port,
 		AuthService:        authSvc,
 		TokenManager:       tokenMgr,
 		Blacklist:          blacklist,
 		ApplicationService: applicationService,
-	}).Start()
+	}
+
+	// Wire AgentGateway when requested.
+	if agentGatewayPort > 0 {
+		reg := registry.New(pool)
+		ts := registry.NewTokenStore()
+		opts.AgentGateway = gateway.New(reg, ts)
+		opts.AgentGatewayPort = agentGatewayPort
+		opts.AgentTokenStore = ts
+		opts.AgentRegistry = reg
+		logger.Infof("AgentGateway enabled on port %d", agentGatewayPort)
+	}
+
+	return apiserver.NewAPIserver(opts).Start()
 }
 
 func NewAPIServerCmd() *cobra.Command {
@@ -136,6 +151,7 @@ func NewAPIServerCmd() *cobra.Command {
 		adminUserName          string
 		adminPasswordHash      string
 		runtimeType            string
+		agentGatewayPort       int // 0 means disabled
 	)
 
 	apiserverCmd := &cobra.Command{
@@ -148,14 +164,8 @@ func NewAPIServerCmd() *cobra.Command {
 	 # Start the API server on a custom port
 	 ai-services catalog apiserver --port 9090 --admin-password-hash <PASSWORD_HASH> --runtime podman
 
-	 # Start with custom admin username
-	 ai-services catalog apiserver --admin-username myadmin --admin-password-hash <PASSWORD_HASH> --runtime podman
-
-	 # Start with custom token TTL settings
-	 ai-services catalog apiserver --access-token-ttl 30m --refresh-token-ttl 48h --admin-password-hash <PASSWORD_HASH> --runtime podman
-
-	 # Start with all custom settings
-	 ai-services catalog apiserver --port 9090 --admin-username myadmin --admin-password-hash <PASSWORD_HASH> --access-token-ttl 30m --refresh-token-ttl 48h --runtime podman
+	 # Start with AgentGateway enabled (for remote worker agents)
+	 ai-services catalog apiserver --admin-password-hash <PASSWORD_HASH> --runtime podman --agentgateway-port 9090
 
 Note:
   - Requires database connection via environment variables (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)
@@ -164,7 +174,7 @@ Note:
 			return common.InitAndValidateRuntimeFlag(runtimeType)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAPIServer(port, defaultAccessTokenTTL, defaultRefreshTokenTTL, adminUserName, adminPasswordHash)
+			return runAPIServer(port, defaultAccessTokenTTL, defaultRefreshTokenTTL, adminUserName, adminPasswordHash, agentGatewayPort)
 		},
 	}
 
@@ -173,6 +183,7 @@ Note:
 	apiserverCmd.Flags().DurationVarP(&defaultRefreshTokenTTL, "refresh-token-ttl", "", defaultRefreshTokenTTL, "Time-to-live for refresh tokens")
 	apiserverCmd.Flags().StringVar(&adminUserName, "admin-username", "admin", "Username for the default admin user")
 	apiserverCmd.Flags().StringVar(&adminPasswordHash, "admin-password-hash", "", "Precomputed hash of the password for the default admin user")
+	apiserverCmd.Flags().IntVar(&agentGatewayPort, "agentgateway-port", 0, "Port for the gRPC AgentGateway (0 = disabled, default 9090 when enabled)")
 	common.ConfigureRuntimeFlag(apiserverCmd, &runtimeType)
 
 	return apiserverCmd

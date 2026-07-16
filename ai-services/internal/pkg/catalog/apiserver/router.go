@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/project-ai-services/ai-services/docs" // Import generated docs
+	"github.com/project-ai-services/ai-services/internal/pkg/agent/registry"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/handlers"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/middleware"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/repository"
@@ -15,7 +16,7 @@ import (
 )
 
 // CreateRouter sets up the Gin router with the necessary routes and authentication middleware for the API server.
-func CreateRouter(authSvc auth.Service, tokenMgr *auth.TokenManager, blacklist repository.TokenBlacklist, appService *repository.ApplicationService) *gin.Engine {
+func CreateRouter(authSvc auth.Service, tokenMgr *auth.TokenManager, blacklist repository.TokenBlacklist, appService *repository.ApplicationService, agentTokenStore *registry.TokenStore, agentReg *registry.Registry) *gin.Engine {
 	if mode := os.Getenv("GIN_MODE"); mode != "" {
 		gin.SetMode(mode)
 	}
@@ -41,6 +42,7 @@ func CreateRouter(authSvc auth.Service, tokenMgr *auth.TokenManager, blacklist r
 	catalogHandler := handlers.NewCatalogHandler()
 	resourcesHandler := handlers.NewResourcesHandler()
 	applicationHandler := handlers.NewApplicationHandler(appService)
+	agentHandler := handlers.NewAgentHandler(agentTokenStore, agentReg)
 
 	v1 := router.Group("/api/v1")
 	{
@@ -75,6 +77,14 @@ func CreateRouter(authSvc auth.Service, tokenMgr *auth.TokenManager, blacklist r
 		applications.PUT("/:id", applicationHandler.UpdateApplication)
 		applications.DELETE("/:id", applicationHandler.DeleteApplication)
 		applications.GET("/:id/ps", applicationHandler.ApplicationPS)
+	}
+
+	// Agent management endpoints (only functional when --agentgateway-port is set)
+	agents := v1.Group("agents")
+	agents.Use(middleware.AuthMiddleware(tokenMgr, blacklist))
+	{
+		agents.GET("", agentHandler.ListAgents)
+		agents.POST("/tokens", agentHandler.IssueToken)
 	}
 
 	return router

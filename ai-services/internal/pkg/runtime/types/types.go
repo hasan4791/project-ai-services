@@ -8,6 +8,8 @@ type RuntimeType string
 const (
 	RuntimeTypePodman    RuntimeType = "podman"
 	RuntimeTypeOpenShift RuntimeType = "openshift"
+	// RuntimeTypeRemote dispatches commands to a worker agent over gRPC.
+	RuntimeTypeRemote RuntimeType = "remote"
 )
 
 // String returns the string representation of RuntimeType.
@@ -18,7 +20,7 @@ func (r RuntimeType) String() string {
 // Valid checks if the runtime type is valid.
 func (r RuntimeType) Valid() bool {
 	switch r {
-	case RuntimeTypePodman, RuntimeTypeOpenShift:
+	case RuntimeTypePodman, RuntimeTypeOpenShift, RuntimeTypeRemote:
 		return true
 	default:
 		return false

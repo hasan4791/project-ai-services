@@ -7,6 +7,8 @@ backend:
   image: icr.io/ai-services-cicd/ai-services:v0.0.175
   runtime: ""
   adminPasswordHash: ""
+  # agentGatewayPort: 0 means disabled; set to e.g. 9090 to enable the gRPC AgentGateway
+  agentGatewayPort: "0"
   podman:
     uri: "/run/podman/podman.sock"
     authFileContent: ""

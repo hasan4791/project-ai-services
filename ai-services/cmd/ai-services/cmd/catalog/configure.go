@@ -28,6 +28,8 @@ var (
 	sslKeyPath  string
 	// HTTPS port flag for catalog configure command.
 	httpsPort int
+	// AgentGateway port — 0 means disabled.
+	agentGatewayPort int
 	// Reset password flag for catalog configure command.
 	resetPasswordFlag bool
 	// Reset podman auth secret for catalog configure command.
@@ -47,15 +49,20 @@ func NewConfigureCmd() *cobra.Command {
 		Short: "Configure the catalog service",
 		Long: `Configure and deploy the AI Services catalog service with the specified runtime.
 
-This command performs the following operations:
-  - Deploys the catalog services
-  - Creates an admin user (if not already present)
-  - Initializes directory structure for applications and models
+This command deploys the catalog pod, creates an admin user, and initialises
+directory structure for applications and models.
 
-Additional configuration options include base directory customization, domain name setup,
-SSL/TLS certificate management, HTTPS port configuration, and credential/certificate reset capabilities.`,
-		Example: `  # Configure catalog service for podman
+Use --agentgateway-port to also start the gRPC AgentGateway so that Worker
+LPARs can connect and receive Podman runtime commands.
+
+Additional configuration options include base directory customisation, domain
+name setup, SSL/TLS certificate management, HTTPS port configuration, and
+credential/certificate reset capabilities.`,
+		Example: `  # Deploy catalog pod (REST API only)
   ai-services catalog configure --runtime podman
+
+  # Deploy catalog pod with AgentGateway on port 9090
+  ai-services catalog configure --runtime podman --agentgateway-port 9090
 
   # Configure with custom HTTPS port
   ai-services catalog configure --runtime podman --https-port 8443`,
@@ -119,7 +126,7 @@ func runConfigure() error {
 	// Sanitize SSL certificate paths to prevent path traversal attacks
 	cleanCertPath, cleanKeyPath := sanitizeSSLPaths(sslCertPath, sslKeyPath)
 
-	return configure.Run(vars.RuntimeFactory.GetRuntimeType(), aiServicesDir, domainName, cleanCertPath, cleanKeyPath, httpsPort)
+	return configure.Run(vars.RuntimeFactory.GetRuntimeType(), aiServicesDir, domainName, cleanCertPath, cleanKeyPath, httpsPort, agentGatewayPort)
 }
 
 func validateResetFlag(cmd *cobra.Command, flagName string) error {
@@ -157,6 +164,11 @@ func validateConfigureFlags() error {
 	// Validate HTTPS port range
 	if httpsPort < 1 || httpsPort > 65535 {
 		return fmt.Errorf("invalid HTTPS port %d: must be between 1 and 65535", httpsPort)
+	}
+
+	// Validate agentgateway-port range when explicitly set
+	if agentGatewayPort != 0 && (agentGatewayPort < 1 || agentGatewayPort > 65535) {
+		return fmt.Errorf("invalid agentgateway-port %d: must be between 1 and 65535", agentGatewayPort)
 	}
 
 	return nil
@@ -261,6 +273,16 @@ func configureConfigureFlags(cmd *cobra.Command) {
 	// Add runtime flag as required
 	common.ConfigureRuntimeFlag(cmd, &runtimeType)
 
+	// AgentGateway port — non-zero enables the gRPC AgentGateway.
+	cmd.Flags().IntVar(
+		&agentGatewayPort,
+		"agentgateway-port",
+		0,
+		"Port for the gRPC AgentGateway that worker agents connect to (0 = disabled).\n"+
+			"When set, the catalog pod's backend container starts the AgentGateway on this port.\n"+
+			"Example: --agentgateway-port 9090\n",
+	)
+
 	// Add basedir flag
 	cmd.Flags().StringVar(
 		&baseDir,
@@ -361,5 +383,3 @@ func sanitizeSSLPaths(certPath, keyPath string) (string, string) {
 
 	return cleanCertPath, cleanKeyPath
 }
-
-// Made with Bob
