@@ -26,8 +26,14 @@ const (
 	AgentStatusRejected     AgentStatus = "rejected"
 )
 
-// heartbeatTimeout is how long before an agent is considered disconnected.
-const heartbeatTimeout = 90 * time.Second
+const (
+	// heartbeatTimeout is how long since the last heartbeat before an agent is
+	// considered disconnected.
+	heartbeatTimeout = 90 * time.Second
+
+	// heartbeatWatchInterval is how often the watcher sweeps all agents.
+	heartbeatWatchInterval = 30 * time.Second
+)
 
 // AgentEntry is the in-memory record for a connected agent.
 type AgentEntry struct {
@@ -91,6 +97,51 @@ func New(pool *pgxpool.Pool) *Registry {
 	return &Registry{
 		agents: make(map[string]*AgentEntry),
 		pool:   pool,
+	}
+}
+
+// StartHeartbeatWatcher starts a background goroutine that marks agents
+// DISCONNECTED when their last heartbeat is older than heartbeatTimeout.
+// It stops when ctx is cancelled.
+func (r *Registry) StartHeartbeatWatcher(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(heartbeatWatchInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				r.sweepStaleAgents(ctx)
+			}
+		}
+	}()
+}
+
+// sweepStaleAgents transitions any READY/BUSY agent with a stale heartbeat to DISCONNECTED.
+func (r *Registry) sweepStaleAgents(ctx context.Context) {
+	now := time.Now()
+
+	r.mu.Lock()
+	var stale []string
+	for id, e := range r.agents {
+		if e.Status != AgentStatusReady && e.Status != AgentStatusBusy {
+			continue
+		}
+		if e.LastHeartbeat.IsZero() || now.Sub(e.LastHeartbeat) > heartbeatTimeout {
+			stale = append(stale, id)
+		}
+	}
+	for _, id := range stale {
+		r.agents[id].Status = AgentStatusDisconnected
+	}
+	r.mu.Unlock()
+
+	for _, id := range stale {
+		logger.WarningfCtx(ctx, "agent registry: agent %s heartbeat timed out — marked DISCONNECTED", id)
+		if r.pool != nil {
+			r.updateStatusDB(ctx, id, AgentStatusDisconnected)
+		}
 	}
 }
 

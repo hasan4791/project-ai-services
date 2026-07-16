@@ -95,7 +95,8 @@ func NewAPIserver(options APIServerOptions) *APIserver {
 }
 
 // Start initializes the API server and begins listening for incoming requests on the configured port.
-// If an AgentGateway is configured it is started on AgentGatewayPort before the REST server.
+// If an AgentGateway is configured it is started on AgentGatewayPort before the REST server,
+// and the heartbeat watcher is started to mark stale agents DISCONNECTED.
 func (a *APIserver) Start() error {
 	if a.agentGateway != nil {
 		ctx := context.Background()
@@ -103,6 +104,9 @@ func (a *APIserver) Start() error {
 		if err := a.agentGateway.Start(ctx, addr); err != nil {
 			return fmt.Errorf("failed to start AgentGateway: %w", err)
 		}
+		// Start the heartbeat watcher so agents that miss heartbeats are
+		// transitioned from READY → DISCONNECTED automatically.
+		a.agentRegistry.StartHeartbeatWatcher(ctx)
 	}
 
 	r := CreateRouter(a.authService, a.tokenManager, a.blacklist, a.applicationService, a.agentTokenStore, a.agentRegistry)
