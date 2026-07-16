@@ -46,8 +46,9 @@ func New(cfg Config) *Daemon {
 }
 
 // Run starts the daemon and blocks until ctx is cancelled.
-// It registers with the control plane, then enters a loop that maintains the
-// CommandStream, reconnecting with exponential backoff on disconnection.
+// Registration must have been performed by the caller before Run is invoked
+// (i.e. agentbootstrap.Register succeeded). Run only maintains the CommandStream,
+// reconnecting with exponential backoff on disconnection.
 func (d *Daemon) Run(ctx context.Context) error {
 	logger.InfofCtx(ctx, "agent daemon starting: agent_id=%s control_plane=%s", d.cfg.AgentID, d.cfg.ControlPlaneURL)
 
@@ -60,11 +61,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 	defer conn.Close()
 
 	client := agentpb.NewAgentGatewayClient(conn)
-
-	// Register once.
-	if err := d.register(ctx, client); err != nil {
-		return fmt.Errorf("agent daemon: registration failed: %w", err)
-	}
 
 	// Maintain the CommandStream with reconnect loop.
 	delay := reconnectBaseDelay
@@ -92,21 +88,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 		delay = reconnectBaseDelay
 	}
-}
-
-// register calls AgentGateway.Register once.
-func (d *Daemon) register(ctx context.Context, client agentpb.AgentGatewayClient) error {
-	resp, err := client.Register(ctx, &agentpb.RegisterRequest{
-		AgentId:        d.cfg.AgentID,
-		PreSharedToken: d.cfg.PreSharedToken,
-		Labels:         d.cfg.Labels,
-		Capabilities:   d.cfg.Capabilities,
-	})
-	if err != nil {
-		return err
-	}
-	logger.InfofCtx(ctx, "agent daemon: registered as %s", resp.GetAgentId())
-	return nil
 }
 
 // runStream opens the bidirectional CommandStream, sends a heartbeat as the
