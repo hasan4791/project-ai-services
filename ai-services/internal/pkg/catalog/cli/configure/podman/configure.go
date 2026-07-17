@@ -36,7 +36,7 @@ func DeployCatalog(ctx context.Context, opts catalogUtils.PodmanConfigureOptions
 		return err
 	}
 
-	caddyCtx, err := executeCatalogDeployment(ctx, deployCtx, opts, passwordHash, opts.AgentGatewayPort)
+	caddyCtx, err := executeCatalogDeployment(ctx, deployCtx, opts, passwordHash)
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func DeployCatalog(ctx context.Context, opts catalogUtils.PodmanConfigureOptions
 	return handlePostDeployment(caddyCtx, deployCtx)
 }
 
-func executeCatalogDeployment(ctx context.Context, deployCtx *deploy.DeployContext, opts catalogUtils.PodmanConfigureOptions, passwordHash string, agentGatewayPort int) (*caddy.Context, error) {
+func executeCatalogDeployment(ctx context.Context, deployCtx *deploy.DeployContext, opts catalogUtils.PodmanConfigureOptions, passwordHash string) (*caddy.Context, error) {
 	logger.Debugln("started configuring catalog service...")
 
 	s := spinner.New("Configuring catalog service...")
@@ -77,7 +77,7 @@ func executeCatalogDeployment(ctx context.Context, deployCtx *deploy.DeployConte
 
 	if !isDeployed {
 		// Prepare deployment with domain suffix computation and create Caddy context
-		err = loadCatalogParamValues(deployCtx, passwordHash, opts.HttpsPort, agentGatewayPort)
+		err = loadCatalogParamValues(deployCtx, passwordHash, opts.HttpsPort, opts.AgentGatewayPort)
 		if err != nil {
 			s.Fail("failed to load param values")
 
