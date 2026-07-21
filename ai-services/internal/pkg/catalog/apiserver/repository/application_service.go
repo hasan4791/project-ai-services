@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/project-ai-services/ai-services/internal/pkg/agent/dispatcher"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog"
 	apimodels "github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/models"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/services/deletion"
@@ -50,6 +51,7 @@ func NewApplicationService(
 	componentRepo dbrepo.ComponentRepository,
 	serviceDependencyRepo dbrepo.ServiceDependencyRepository,
 	provider *catalog.CatalogProvider,
+	agentDispatcher *dispatcher.AgentDispatcher, // nil when AgentGateway is disabled
 ) *ApplicationService {
 	return &ApplicationService{
 		appRepo:               appRepo,
@@ -58,7 +60,7 @@ func NewApplicationService(
 		serviceDependencyRepo: serviceDependencyRepo,
 		provider:              provider,
 		deploymentPlanner:     deployment.NewDeploymentPlanner(provider, componentRepo),
-		deploymentExecutor:    deployment.NewDeploymentExecutor(provider, appRepo, serviceRepo, componentRepo),
+		deploymentExecutor:    deployment.NewDeploymentExecutor(provider, appRepo, serviceRepo, componentRepo, agentDispatcher),
 		deletionService:       deletion.NewDeletionService(appRepo, serviceRepo, componentRepo, serviceDependencyRepo),
 		validator:             validators.NewApplicationValidator(provider),
 	}
@@ -296,8 +298,10 @@ func (s *ApplicationService) CreateApplication(ctx context.Context, req apimodel
 	}
 
 	// Phase 3: Create deployment plan (synchronous - fail fast if invalid)
-	// Use podman as default runtime type for planning
-	plan, err := s.deploymentPlanner.PlanDeployment(ctx, req, runtimeTypes.RuntimeTypePodman.String())
+	// For remote-podman the catalog paths are identical to podman; pass "podman" as the
+	// runtimeType so existing catalog asset directories are resolved correctly.
+	planRuntimeType := runtimeTypes.RuntimeTypePodman.String()
+	plan, err := s.deploymentPlanner.PlanDeployment(ctx, req, planRuntimeType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create deployment plan: %w", err)
 	}
@@ -350,11 +354,9 @@ func (s *ApplicationService) executeDeploymentAsync(parentCtx context.Context, p
 		}
 	}()
 
-	// Determine runtime type (currently only Podman is supported)
-	runtimeType := runtimeTypes.RuntimeTypePodman
-
-	// Execute deployment using the existing plan
-	err := s.deploymentExecutor.ExecuteWithPlan(ctx, plan, req, runtimeType)
+	// Execute deployment using the existing plan.
+	// ExecuteWithPlan resolves the runtime (local Podman or remote agent) from the plan.
+	err := s.deploymentExecutor.ExecuteWithPlan(ctx, plan, req)
 	if err != nil {
 		logger.ErrorfCtx(ctx, "Deployment failed for application %s: %v", plan.ApplicationName, err)
 

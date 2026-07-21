@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/project-ai-services/ai-services/internal/pkg/agent/dispatcher"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog"
 	apimodels "github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/models"
-	"github.com/project-ai-services/ai-services/internal/pkg/vars"
 
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/apiserver/services/deployment/repository/podman"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/db/repository"
@@ -24,14 +24,19 @@ type DeploymentExecutor struct {
 	appRepo         repository.ApplicationRepository
 	serviceRepo     repository.ServiceRepository
 	componentRepo   repository.ComponentRepository
+	// dispatcher is optional; non-nil only when the AgentGateway is enabled.
+	dispatcher *dispatcher.AgentDispatcher
 }
 
 // NewDeploymentExecutor creates a new DeploymentExecutor instance.
+// dispatcher may be nil when the AgentGateway is not configured; in that case
+// requests with an agent_selector will return an error at execution time.
 func NewDeploymentExecutor(
 	catalogProvider *catalog.CatalogProvider,
 	appRepo repository.ApplicationRepository,
 	serviceRepo repository.ServiceRepository,
 	componentRepo repository.ComponentRepository,
+	dispatcher *dispatcher.AgentDispatcher,
 ) *DeploymentExecutor {
 	return &DeploymentExecutor{
 		planner:         NewDeploymentPlanner(catalogProvider, componentRepo),
@@ -39,74 +44,61 @@ func NewDeploymentExecutor(
 		appRepo:         appRepo,
 		serviceRepo:     serviceRepo,
 		componentRepo:   componentRepo,
+		dispatcher:      dispatcher,
 	}
 }
 
 // ExecuteWithPlan executes deployment using an existing plan.
+// It resolves the correct runtime from the plan (local Podman or a remote agent),
+// then asks the runtime itself what type it is to select the right deployer.
 // This is used when the plan has already been created and database records inserted.
 func (e *DeploymentExecutor) ExecuteWithPlan(
 	ctx context.Context,
 	plan *DeploymentPlan,
 	req apimodels.CreateApplicationRequest,
-	runtimeType types.RuntimeType,
 ) error {
-	if err := e.executeDeployment(ctx, plan, req, runtimeType); err != nil {
-		return fmt.Errorf("failed to execute deployment: %w", err)
+	rt, err := e.resolveRuntime(plan)
+	if err != nil {
+		return err
 	}
-	return nil
-}
 
-// executeDeployment executes the deployment plan using the appropriate runtime deployer.
-func (e *DeploymentExecutor) executeDeployment(
-	ctx context.Context,
-	plan *DeploymentPlan,
-	req apimodels.CreateApplicationRequest,
-	runtimeType types.RuntimeType,
-) error {
-	switch runtimeType {
-	case types.RuntimeTypePodman:
-		return e.executePodmanDeployment(ctx, plan, req)
-	case types.RuntimeTypeRemote:
-		return e.executeRemoteDeployment(ctx, plan, req)
+	switch rt.Type() {
+	case types.RuntimeTypePodman, types.RuntimeTypeRemote:
+		// Both local Podman and remote agents (which run Podman) use PodmanDeployer.
+		// RemoteRuntime proxies every call over gRPC to the worker's Podman socket,
+		// so the deployer logic is identical.
+		return e.runPodmanDeployer(ctx, rt, plan, req)
 	case types.RuntimeTypeOpenShift:
 		return fmt.Errorf("OpenShift deployment not yet implemented")
 	default:
-		return fmt.Errorf("unsupported runtime type: %s", runtimeType)
+		return fmt.Errorf("unsupported runtime type: %s", rt.Type())
 	}
 }
 
-// executePodmanDeployment executes deployment for the local Podman runtime.
-func (e *DeploymentExecutor) executePodmanDeployment(
-	ctx context.Context,
-	plan *DeploymentPlan,
-	req apimodels.CreateApplicationRequest,
-) error {
+// resolveRuntime returns the correct runtime for the plan.
+// When plan.AgentSelector is set it picks a READY remote agent via the dispatcher.
+// Otherwise it creates a local PodmanClient.
+func (e *DeploymentExecutor) resolveRuntime(plan *DeploymentPlan) (runtime.Runtime, error) {
+	if len(plan.AgentSelector) > 0 {
+		if e.dispatcher == nil {
+			return nil, fmt.Errorf("agent_selector provided but AgentGateway is not enabled on this server")
+		}
+		rt, _, err := e.dispatcher.SelectAgent(plan.AgentSelector)
+		if err != nil {
+			return nil, fmt.Errorf("no available worker agent: %w", err)
+		}
+		return rt, nil
+	}
+
 	rt, err := podmanRuntime.NewPodmanClient()
 	if err != nil {
-		return fmt.Errorf("failed to initialize Podman runtime: %w", err)
+		return nil, fmt.Errorf("failed to initialize Podman runtime: %w", err)
 	}
-	return e.runDeployer(ctx, rt, plan, req)
+	return rt, nil
 }
 
-// executeRemoteDeployment executes deployment via a remote worker agent.
-// It reads the agent selector from the plan's AgentSelector field (if set)
-// and delegates to the RuntimeFactory which must already hold a RemoteRuntime.
-func (e *DeploymentExecutor) executeRemoteDeployment(
-	ctx context.Context,
-	plan *DeploymentPlan,
-	req apimodels.CreateApplicationRequest,
-) error {
-	// The caller (ApplicationService) is responsible for providing the correct
-	// runtime via vars.RuntimeFactory when runtime=remote.  We retrieve it here.
-	rt, err := getRuntimeFromFactory()
-	if err != nil {
-		return fmt.Errorf("failed to get remote runtime: %w", err)
-	}
-	return e.runDeployer(ctx, rt, plan, req)
-}
-
-// runDeployer creates a PodmanDeployer with the provided runtime and executes it.
-func (e *DeploymentExecutor) runDeployer(
+// runPodmanDeployer creates a PodmanDeployer with the provided runtime and executes it.
+func (e *DeploymentExecutor) runPodmanDeployer(
 	ctx context.Context,
 	rt runtime.Runtime,
 	plan *DeploymentPlan,
@@ -123,14 +115,3 @@ func (e *DeploymentExecutor) runDeployer(
 }
 
 // Made with Bob
-
-// getRuntimeFromFactory obtains a runtime from vars.RuntimeFactory.
-// For RuntimeTypeRemote this returns an error because RemoteRuntime instances
-// are always created by AgentDispatcher.SelectAgent; the caller should have
-// set a concrete runtime on the plan before invoking executeRemoteDeployment.
-func getRuntimeFromFactory() (runtime.Runtime, error) {
-	if vars.RuntimeFactory == nil {
-		return nil, fmt.Errorf("RuntimeFactory not initialised")
-	}
-	return vars.RuntimeFactory.Create("")
-}

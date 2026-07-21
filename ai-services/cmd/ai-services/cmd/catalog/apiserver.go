@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/project-ai-services/ai-services/cmd/ai-services/cmd/catalog/common"
+	agentdispatcher "github.com/project-ai-services/ai-services/internal/pkg/agent/dispatcher"
 	"github.com/project-ai-services/ai-services/internal/pkg/agent/gateway"
 	"github.com/project-ai-services/ai-services/internal/pkg/agent/registry"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog"
@@ -115,30 +116,35 @@ func runAPIServer(port int, accessTTL, refreshTTL time.Duration, adminUser, admi
 		return fmt.Errorf("failed to initialize catalog provider: %w", err)
 	}
 
-	// Initialize application service with all required repositories
-	applicationService := apirepository.NewApplicationService(applicationRepo, serviceRepo, componentRepo, serviceDependencyRepo, catalogProvider)
-
-	tokenMgr := auth.NewTokenManager(secretKey, accessTTL, refreshTTL)
-	authSvc := auth.NewAuthService(userRepo, tokenMgr, blacklist)
-
+	// Build AgentDispatcher when the AgentGateway is requested.
+	// Both the dispatcher and the gateway share the same Registry instance.
+	var agentDispatcher *agentdispatcher.AgentDispatcher
 	opts := apiserver.APIServerOptions{
-		Port:               port,
-		AuthService:        authSvc,
-		TokenManager:       tokenMgr,
-		Blacklist:          blacklist,
-		ApplicationService: applicationService,
+		Port:    port,
+		Blacklist: blacklist,
 	}
-
-	// Wire AgentGateway when requested.
 	if agentGatewayPort > 0 {
 		reg := registry.New(pool)
 		ts := registry.NewTokenStore()
+		agentDispatcher = agentdispatcher.New(reg)
 		opts.AgentGateway = gateway.New(reg, ts)
 		opts.AgentGatewayPort = agentGatewayPort
 		opts.AgentTokenStore = ts
 		opts.AgentRegistry = reg
 		logger.Infof("AgentGateway enabled on port %d", agentGatewayPort)
 	}
+
+	// Initialize application service with all required repositories.
+	// agentDispatcher is nil when AgentGateway is disabled — remote-podman
+	// deployments will return an error at execution time in that case.
+	applicationService := apirepository.NewApplicationService(applicationRepo, serviceRepo, componentRepo, serviceDependencyRepo, catalogProvider, agentDispatcher)
+
+	tokenMgr := auth.NewTokenManager(secretKey, accessTTL, refreshTTL)
+	authSvc := auth.NewAuthService(userRepo, tokenMgr, blacklist)
+
+	opts.AuthService = authSvc
+	opts.TokenManager = tokenMgr
+	opts.ApplicationService = applicationService
 
 	return apiserver.NewAPIserver(opts).Start()
 }

@@ -2,11 +2,12 @@ package models
 
 // CreateApplicationRequest represents the request body for creating a new application.
 type CreateApplicationRequest struct {
-	Name      string    `json:"name" binding:"required,min=3,max=100"`
-	CatalogID string    `json:"catalog_id" binding:"required"`
-	Version   string    `json:"version" binding:"required"`
-	Services  []Service `json:"services" binding:"required,dive"`
-	CreatedBy string    `json:"-"` // Set from auth context, not from request body
+	Name          string            `json:"name" binding:"required,min=3,max=100"`
+	CatalogID     string            `json:"catalog_id" binding:"required"`
+	Version       string            `json:"version" binding:"required"`
+	Services      []Service         `json:"services" binding:"required,dive"`
+	AgentSelector map[string]string `json:"agent_selector"` // when set, deploy via a remote worker agent matching these labels
+	CreatedBy     string            `json:"-"`              // Set from auth context, not from request body
 }
 
 // Service represents a service configuration in the application.

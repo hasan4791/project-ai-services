@@ -72,6 +72,7 @@ func (p *DeploymentPlanner) PlanDeployment(
 		IsArchitecture:  isArchitecture,
 		Components:      make(map[string]*ComponentPlan),
 		Services:        make(map[string]*ServicePlan),
+		AgentSelector:   req.AgentSelector,
 	}
 
 	// Process each service from request

@@ -17,6 +17,7 @@ type DeploymentPlan struct {
 	Components      map[string]*ComponentPlan // Key: component hash, Value: component plan
 	Services        map[string]*ServicePlan   // Key: service ID, Value: service plan
 	SpyreCardPool   *SpyreCardPool            // Allocated Spyre card pool (set after allocation)
+	AgentSelector   map[string]string         // Label selector for remote-podman agent (nil = any)
 }
 
 // ComponentPlan represents a single component deployment.
