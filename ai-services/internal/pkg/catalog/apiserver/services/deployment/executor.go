@@ -63,12 +63,12 @@ func (e *DeploymentExecutor) ExecuteWithPlan(
 	}
 
 	switch rt.Type() {
-	case types.RuntimeTypePodman, types.RuntimeTypeRemote:
-		// Both local Podman and remote agents (which run Podman) use PodmanDeployer.
+	case types.RuntimeTypePodman, types.RuntimeTypeRemotePodman:
+		// Local Podman and remote Podman agents both use PodmanDeployer.
 		// RemoteRuntime proxies every call over gRPC to the worker's Podman socket,
 		// so the deployer logic is identical.
 		return e.runPodmanDeployer(ctx, rt, plan, req)
-	case types.RuntimeTypeOpenShift:
+	case types.RuntimeTypeOpenShift, types.RuntimeTypeRemoteOpenShift:
 		return fmt.Errorf("OpenShift deployment not yet implemented")
 	default:
 		return fmt.Errorf("unsupported runtime type: %s", rt.Type())

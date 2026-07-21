@@ -32,10 +32,10 @@ func (f *RuntimeFactory) GetRuntimeType() types.RuntimeType {
 }
 
 // CreateRuntime creates a runtime instance based on the specified type.
-// Note: RuntimeTypeRemote requires agent selection via AgentDispatcher; callers
-// that need a specific agent should use dispatcher.AgentDispatcher.SelectAgent()
-// directly.  This factory path returns an error for remote to ensure the
-// dispatcher path is used instead.
+// Note: remote runtime types (RuntimeTypeRemotePodman / RuntimeTypeRemoteOpenShift)
+// require agent selection via AgentDispatcher; callers should use
+// dispatcher.AgentDispatcher.SelectAgent() directly — this factory returns an
+// error for those types to prevent accidental misuse.
 func CreateRuntime(runtimeType types.RuntimeType, namespace string) (Runtime, error) {
 	switch runtimeType {
 	case types.RuntimeTypePodman:
@@ -56,8 +56,8 @@ func CreateRuntime(runtimeType types.RuntimeType, namespace string) (Runtime, er
 
 		return client, nil
 
-	case types.RuntimeTypeRemote:
-		return nil, fmt.Errorf("RuntimeTypeRemote requires agent selection via AgentDispatcher – use dispatcher.AgentDispatcher.SelectAgent()")
+	case types.RuntimeTypeRemotePodman, types.RuntimeTypeRemoteOpenShift:
+		return nil, fmt.Errorf("%s requires agent selection via AgentDispatcher – use dispatcher.AgentDispatcher.SelectAgent()", runtimeType)
 
 	default:
 		return nil, fmt.Errorf("unsupported runtime type: %s", runtimeType)

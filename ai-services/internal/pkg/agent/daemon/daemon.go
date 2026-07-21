@@ -1,6 +1,6 @@
 // Package daemon implements the worker agent daemon that runs on each LPAR.
 // It connects to the control plane AgentGateway over a bidirectional gRPC stream
-// and executes Podman runtime commands on behalf of the control plane.
+// and executes runtime commands on behalf of the control plane.
 package daemon
 
 import (
@@ -16,8 +16,7 @@ import (
 
 	agentpb "github.com/project-ai-services/ai-services/internal/pkg/agent/proto"
 	"github.com/project-ai-services/ai-services/internal/pkg/logger"
-	podmanRuntime "github.com/project-ai-services/ai-services/internal/pkg/runtime/podman"
-	"github.com/project-ai-services/ai-services/internal/pkg/runtime/types"
+	"github.com/project-ai-services/ai-services/internal/pkg/runtime"
 )
 
 const (
@@ -28,21 +27,24 @@ const (
 
 // Config holds the configuration for the agent daemon.
 type Config struct {
-	AgentID        string
+	AgentID         string
 	ControlPlaneURL string // e.g. "lpar-0.example.com:9090"
-	PreSharedToken string
-	Labels         map[string]string
-	Capabilities   map[string]string
+	PreSharedToken  string
+	Labels          map[string]string
+	Capabilities    map[string]string
 }
 
 // Daemon is the worker agent daemon.
 type Daemon struct {
 	cfg Config
+	rt  runtime.Runtime // injected at construction; determines what commands are dispatched to
 }
 
-// New creates a new Daemon with the provided config.
-func New(cfg Config) *Daemon {
-	return &Daemon{cfg: cfg}
+// New creates a new Daemon with the provided config and runtime.
+// The runtime is used for all command dispatches and its Type() is reported
+// back to the control plane via COMMAND_TYPE_RUNTIME_TYPE.
+func New(cfg Config, rt runtime.Runtime) *Daemon {
+	return &Daemon{cfg: cfg, rt: rt}
 }
 
 // Run starts the daemon and blocks until ctx is cancelled.
@@ -50,7 +52,8 @@ func New(cfg Config) *Daemon {
 // (i.e. agentbootstrap.Register succeeded). Run only maintains the CommandStream,
 // reconnecting with exponential backoff on disconnection.
 func (d *Daemon) Run(ctx context.Context) error {
-	logger.InfofCtx(ctx, "agent daemon starting: agent_id=%s control_plane=%s", d.cfg.AgentID, d.cfg.ControlPlaneURL)
+	logger.InfofCtx(ctx, "agent daemon starting: agent_id=%s control_plane=%s runtime=%s",
+		d.cfg.AgentID, d.cfg.ControlPlaneURL, d.rt.Type())
 
 	conn, err := grpc.NewClient(d.cfg.ControlPlaneURL,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -147,7 +150,7 @@ func (d *Daemon) heartbeatLoop(ctx context.Context, stream agentpb.AgentGateway_
 	}
 }
 
-// executeCommand dispatches a Command to the local Podman runtime and returns
+// executeCommand dispatches a Command to the injected runtime and returns
 // the CommandResult.
 func (d *Daemon) executeCommand(ctx context.Context, cmd *agentpb.Command) *agentpb.CommandResult {
 	result, err := d.dispatchToRuntime(ctx, cmd)
@@ -166,12 +169,9 @@ func (d *Daemon) executeCommand(ctx context.Context, cmd *agentpb.Command) *agen
 	return r
 }
 
-// dispatchToRuntime creates a local Podman client and calls the matching method.
+// dispatchToRuntime dispatches the command to d.rt (the injected runtime).
 func (d *Daemon) dispatchToRuntime(ctx context.Context, cmd *agentpb.Command) ([]byte, error) {
-	rt, err := podmanRuntime.NewPodmanClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create podman client: %w", err)
-	}
+	rt := d.rt
 
 	switch cmd.GetType() {
 	case agentpb.CommandType_COMMAND_TYPE_LIST_IMAGES:
@@ -336,7 +336,9 @@ func (d *Daemon) dispatchToRuntime(ctx context.Context, cmd *agentpb.Command) ([
 		return marshalResult(result, err)
 
 	case agentpb.CommandType_COMMAND_TYPE_RUNTIME_TYPE:
-		return marshalResult(string(types.RuntimeTypePodman), nil)
+		// Report the actual runtime type so the control plane can route
+		// to the correct deployer (PodmanDeployer, OpenShiftDeployer, etc.).
+		return marshalResult(string(rt.Type()), nil)
 
 	default:
 		return nil, fmt.Errorf("unknown command type: %v", cmd.GetType())

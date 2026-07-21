@@ -29,6 +29,7 @@ type AgentConf struct {
 	ControlPlaneURL string            `yaml:"control_plane_url"` // e.g. "lpar-0.example.com:9090"
 	AgentID         string            `yaml:"agent_id"`
 	PreSharedToken  string            `yaml:"pre_shared_token"`
+	Runtime         string            `yaml:"runtime"`      // "podman" (default) or "openshift"
 	Labels          map[string]string `yaml:"labels"`
 	Capabilities    map[string]string `yaml:"capabilities"`
 }

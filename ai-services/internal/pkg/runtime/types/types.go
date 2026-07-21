@@ -6,10 +6,16 @@ import "time"
 type RuntimeType string
 
 const (
+	// Local runtimes — used directly on the control plane LPAR.
 	RuntimeTypePodman    RuntimeType = "podman"
 	RuntimeTypeOpenShift RuntimeType = "openshift"
-	// RuntimeTypeRemote dispatches commands to a worker agent over gRPC.
-	RuntimeTypeRemote RuntimeType = "remote"
+
+	// Remote runtimes — resolved by querying the agent via COMMAND_TYPE_RUNTIME_TYPE.
+	// The agent daemon returns its local runtime type ("podman" or "openshift");
+	// RemoteRuntime.Type() maps that to one of these two constants so the executor
+	// can route to the correct deployer without any string parsing in call sites.
+	RuntimeTypeRemotePodman    RuntimeType = "remote-podman"
+	RuntimeTypeRemoteOpenShift RuntimeType = "remote-openshift"
 )
 
 // String returns the string representation of RuntimeType.
@@ -20,7 +26,8 @@ func (r RuntimeType) String() string {
 // Valid checks if the runtime type is valid.
 func (r RuntimeType) Valid() bool {
 	switch r {
-	case RuntimeTypePodman, RuntimeTypeOpenShift, RuntimeTypeRemote:
+	case RuntimeTypePodman, RuntimeTypeOpenShift,
+		RuntimeTypeRemotePodman, RuntimeTypeRemoteOpenShift:
 		return true
 	default:
 		return false

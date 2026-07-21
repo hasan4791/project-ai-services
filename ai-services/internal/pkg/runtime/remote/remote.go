@@ -250,6 +250,18 @@ func (r *RemoteRuntime) GetSystemInfo() (*models.SystemInfo, error) {
 	return &result, err
 }
 
+// Type queries the remote agent for its local runtime type and maps it to the
+// corresponding remote constant (RuntimeTypeRemotePodman / RuntimeTypeRemoteOpenShift).
+// Falls back to RuntimeTypeRemotePodman on any error since all current agents run Podman.
 func (r *RemoteRuntime) Type() types.RuntimeType {
-	return types.RuntimeTypeRemote
+	var raw string
+	if err := r.dispatch(context.Background(), agentpb.CommandType_COMMAND_TYPE_RUNTIME_TYPE, struct{}{}, &raw); err != nil {
+		return types.RuntimeTypeRemotePodman
+	}
+	switch types.RuntimeType(raw) {
+	case types.RuntimeTypeOpenShift:
+		return types.RuntimeTypeRemoteOpenShift
+	default:
+		return types.RuntimeTypeRemotePodman
+	}
 }
