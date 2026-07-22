@@ -20,7 +20,6 @@ import (
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/db/repository"
 	"github.com/project-ai-services/ai-services/internal/pkg/catalog/types"
 	catalogutils "github.com/project-ai-services/ai-services/internal/pkg/catalog/utils"
-	"github.com/project-ai-services/ai-services/internal/pkg/cli/helpers"
 	clipodman "github.com/project-ai-services/ai-services/internal/pkg/cli/podman"
 	"github.com/project-ai-services/ai-services/internal/pkg/cli/templates"
 	"github.com/project-ai-services/ai-services/internal/pkg/constants"
@@ -29,6 +28,7 @@ import (
 	podmodels "github.com/project-ai-services/ai-services/internal/pkg/models"
 	"github.com/project-ai-services/ai-services/internal/pkg/proxy"
 	"github.com/project-ai-services/ai-services/internal/pkg/runtime"
+	runtimetypes "github.com/project-ai-services/ai-services/internal/pkg/runtime/types"
 	"github.com/project-ai-services/ai-services/internal/pkg/specs"
 	"github.com/project-ai-services/ai-services/internal/pkg/utils"
 	"github.com/project-ai-services/ai-services/internal/pkg/vars"
@@ -217,15 +217,30 @@ func (d *PodmanDeployer) extractModelsFromParams(params map[string]any, modelSet
 	}
 }
 
-// downloadModels downloads all models in the provided set.
+// downloadModels downloads all models in the provided set using the deployer's
+// runtime. For a remote agent this dispatches RunEphemeralContainer over gRPC
+// so the download runs on the worker LPAR, not the control plane.
 func (d *PodmanDeployer) downloadModels(ctx context.Context, modelSet map[string]bool) error {
 	modelsPath := utils.GetModelsPath()
 
 	for modelName := range modelSet {
 		logger.InfofCtx(ctx, "Downloading model: %s\n", modelName)
 
-		if err := helpers.DownloadModelContainer(ctx, modelName, modelsPath); err != nil {
+		cmd := []string{"hf", "download", modelName, "--local-dir", fmt.Sprintf("/models/%s", modelName)}
+		mounts := []runtimetypes.BindMount{
+			{
+				Source:      modelsPath,
+				Destination: "/models",
+				Options:     []string{"Z"},
+			},
+		}
+
+		exitCode, err := d.runtime.RunEphemeralContainer(vars.ToolImage, cmd, mounts)
+		if err != nil {
 			return fmt.Errorf("failed to download model %s: %w", modelName, err)
+		}
+		if exitCode != 0 {
+			return fmt.Errorf("model download for %s failed with exit code %d", modelName, exitCode)
 		}
 	}
 

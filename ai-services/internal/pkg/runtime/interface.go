@@ -47,6 +47,13 @@ type Runtime interface {
 	// System information
 	GetSystemInfo() (*models.SystemInfo, error)
 
+	// RunEphemeralContainer runs a one-shot container (image + cmd + mounts),
+	// waits for it to exit, and returns its exit code.
+	// For local Podman this runs via the Podman socket directly.
+	// For a remote agent this is dispatched over gRPC so the container
+	// runs on the worker LPAR, not the control plane.
+	RunEphemeralContainer(image string, cmd []string, mounts []types.BindMount) (int32, error)
+
 	// Runtime type identification
 	Type() types.RuntimeType
 }

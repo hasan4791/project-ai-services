@@ -126,6 +126,11 @@ type containerLogsPayload struct{ ContainerNameOrID string }
 type listRoutesPayload struct{}
 type deletePVCsPayload struct{ AppLabel string }
 type getSystemInfoPayload struct{}
+type runEphemeralContainerPayload struct {
+	Image  string           `json:"image"`
+	Cmd    []string         `json:"cmd"`
+	Mounts []types.BindMount `json:"mounts"`
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // runtime.Runtime interface implementation
@@ -248,6 +253,13 @@ func (r *RemoteRuntime) GetSystemInfo() (*models.SystemInfo, error) {
 	var result models.SystemInfo
 	err := r.dispatch(context.Background(), agentpb.CommandType_COMMAND_TYPE_GET_SYSTEM_INFO, getSystemInfoPayload{}, &result)
 	return &result, err
+}
+
+func (r *RemoteRuntime) RunEphemeralContainer(image string, cmd []string, mounts []types.BindMount) (int32, error) {
+	var exitCode int32
+	err := r.dispatch(context.Background(), agentpb.CommandType_COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER,
+		runEphemeralContainerPayload{Image: image, Cmd: cmd, Mounts: mounts}, &exitCode)
+	return exitCode, err
 }
 
 // Type queries the remote agent for its local runtime type and maps it to the

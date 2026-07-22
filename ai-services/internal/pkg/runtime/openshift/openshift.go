@@ -471,3 +471,8 @@ func (kc *OpenshiftClient) GetPodResources(nameOrID string) (*types.PodResources
 		SpyreCards: []string{},
 	}, nil
 }
+
+// RunEphemeralContainer is not implemented for OpenShift.
+func (kc *OpenshiftClient) RunEphemeralContainer(_ string, _ []string, _ []types.BindMount) (int32, error) {
+	return -1, fmt.Errorf("RunEphemeralContainer not implemented for OpenShift runtime")
+}

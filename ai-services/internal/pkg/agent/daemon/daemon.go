@@ -17,6 +17,7 @@ import (
 	agentpb "github.com/project-ai-services/ai-services/internal/pkg/agent/proto"
 	"github.com/project-ai-services/ai-services/internal/pkg/logger"
 	"github.com/project-ai-services/ai-services/internal/pkg/runtime"
+	runtimetypes "github.com/project-ai-services/ai-services/internal/pkg/runtime/types"
 )
 
 const (
@@ -339,6 +340,18 @@ func (d *Daemon) dispatchToRuntime(ctx context.Context, cmd *agentpb.Command) ([
 		// Report the actual runtime type so the control plane can route
 		// to the correct deployer (PodmanDeployer, OpenShiftDeployer, etc.).
 		return marshalResult(string(rt.Type()), nil)
+
+	case agentpb.CommandType_COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER:
+		var p struct {
+			Image  string                 `json:"image"`
+			Cmd    []string               `json:"cmd"`
+			Mounts []runtimetypes.BindMount `json:"mounts"`
+		}
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		exitCode, err := rt.RunEphemeralContainer(p.Image, p.Cmd, p.Mounts)
+		return marshalResult(exitCode, err)
 
 	default:
 		return nil, fmt.Errorf("unknown command type: %v", cmd.GetType())

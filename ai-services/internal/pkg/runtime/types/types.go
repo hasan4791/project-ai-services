@@ -74,3 +74,10 @@ type PodResources struct {
 	MemUsage   uint64   // Memory usage in bytes
 	SpyreCards []string // List of Spyre card PCI addresses
 }
+
+// BindMount describes a host→container bind mount for an ephemeral container.
+type BindMount struct {
+	Source      string   // host path
+	Destination string   // container path
+	Options     []string // e.g. ["Z"]
+}

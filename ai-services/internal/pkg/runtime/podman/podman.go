@@ -22,6 +22,7 @@ import (
 	"github.com/containers/podman/v5/pkg/bindings/volumes"
 	"github.com/containers/podman/v5/pkg/domain/entities"
 	"github.com/containers/podman/v5/pkg/specgen"
+	spec "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/project-ai-services/ai-services/internal/pkg/accelerator/spyre"
 	"github.com/project-ai-services/ai-services/internal/pkg/constants"
 	"github.com/project-ai-services/ai-services/internal/pkg/logger"
@@ -370,6 +371,29 @@ func (pc *PodmanClient) RunContainerWithSpec(s *specgen.SpecGenerator) (int32, e
 	}
 
 	return exitCode, nil
+}
+
+// RunEphemeralContainer implements runtime.Runtime.
+// It creates a one-shot container from image, runs cmd with the given bind
+// mounts, waits for it to exit, and returns the exit code.
+func (pc *PodmanClient) RunEphemeralContainer(image string, cmd []string, mounts []types.BindMount) (int32, error) {
+	s := specgen.NewSpecGenerator(image, false)
+	rm := true
+	s.Remove = &rm
+	s.Command = cmd
+
+	specMounts := make([]spec.Mount, 0, len(mounts))
+	for _, m := range mounts {
+		specMounts = append(specMounts, spec.Mount{
+			Type:        "bind",
+			Source:      m.Source,
+			Destination: m.Destination,
+			Options:     m.Options,
+		})
+	}
+	s.Mounts = specMounts
+
+	return pc.RunContainerWithSpec(s)
 }
 
 func (pc *PodmanClient) ListRoutes() ([]types.Route, error) {

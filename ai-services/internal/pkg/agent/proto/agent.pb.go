@@ -5,7 +5,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.35.1
-// source: agent.proto
+// source: internal/pkg/agent/proto/agent.proto
 
 package proto
 
@@ -27,30 +27,31 @@ const (
 type CommandType int32
 
 const (
-	CommandType_COMMAND_TYPE_UNSPECIFIED       CommandType = 0
-	CommandType_COMMAND_TYPE_LIST_IMAGES       CommandType = 1
-	CommandType_COMMAND_TYPE_PULL_IMAGE        CommandType = 2
-	CommandType_COMMAND_TYPE_LIST_PODS         CommandType = 3
-	CommandType_COMMAND_TYPE_CREATE_POD        CommandType = 4
-	CommandType_COMMAND_TYPE_DELETE_POD        CommandType = 5
-	CommandType_COMMAND_TYPE_STOP_POD          CommandType = 6
-	CommandType_COMMAND_TYPE_START_POD         CommandType = 7
-	CommandType_COMMAND_TYPE_INSPECT_POD       CommandType = 8
-	CommandType_COMMAND_TYPE_POD_EXISTS        CommandType = 9
-	CommandType_COMMAND_TYPE_POD_LOGS          CommandType = 10
-	CommandType_COMMAND_TYPE_GET_POD_RESOURCES CommandType = 11
-	CommandType_COMMAND_TYPE_LIST_SECRETS      CommandType = 12
-	CommandType_COMMAND_TYPE_DELETE_SECRET     CommandType = 13
-	CommandType_COMMAND_TYPE_SECRET_EXISTS     CommandType = 14
-	CommandType_COMMAND_TYPE_DELETE_VOLUME     CommandType = 15
-	CommandType_COMMAND_TYPE_VOLUME_EXISTS     CommandType = 16
-	CommandType_COMMAND_TYPE_INSPECT_CONTAINER CommandType = 17
-	CommandType_COMMAND_TYPE_CONTAINER_EXISTS  CommandType = 18
-	CommandType_COMMAND_TYPE_CONTAINER_LOGS    CommandType = 19
-	CommandType_COMMAND_TYPE_LIST_ROUTES       CommandType = 20
-	CommandType_COMMAND_TYPE_DELETE_PVCS       CommandType = 21
-	CommandType_COMMAND_TYPE_GET_SYSTEM_INFO   CommandType = 22
-	CommandType_COMMAND_TYPE_RUNTIME_TYPE      CommandType = 23
+	CommandType_COMMAND_TYPE_UNSPECIFIED             CommandType = 0
+	CommandType_COMMAND_TYPE_LIST_IMAGES             CommandType = 1
+	CommandType_COMMAND_TYPE_PULL_IMAGE              CommandType = 2
+	CommandType_COMMAND_TYPE_LIST_PODS               CommandType = 3
+	CommandType_COMMAND_TYPE_CREATE_POD              CommandType = 4
+	CommandType_COMMAND_TYPE_DELETE_POD              CommandType = 5
+	CommandType_COMMAND_TYPE_STOP_POD                CommandType = 6
+	CommandType_COMMAND_TYPE_START_POD               CommandType = 7
+	CommandType_COMMAND_TYPE_INSPECT_POD             CommandType = 8
+	CommandType_COMMAND_TYPE_POD_EXISTS              CommandType = 9
+	CommandType_COMMAND_TYPE_POD_LOGS                CommandType = 10
+	CommandType_COMMAND_TYPE_GET_POD_RESOURCES       CommandType = 11
+	CommandType_COMMAND_TYPE_LIST_SECRETS            CommandType = 12
+	CommandType_COMMAND_TYPE_DELETE_SECRET           CommandType = 13
+	CommandType_COMMAND_TYPE_SECRET_EXISTS           CommandType = 14
+	CommandType_COMMAND_TYPE_DELETE_VOLUME           CommandType = 15
+	CommandType_COMMAND_TYPE_VOLUME_EXISTS           CommandType = 16
+	CommandType_COMMAND_TYPE_INSPECT_CONTAINER       CommandType = 17
+	CommandType_COMMAND_TYPE_CONTAINER_EXISTS        CommandType = 18
+	CommandType_COMMAND_TYPE_CONTAINER_LOGS          CommandType = 19
+	CommandType_COMMAND_TYPE_LIST_ROUTES             CommandType = 20
+	CommandType_COMMAND_TYPE_DELETE_PVCS             CommandType = 21
+	CommandType_COMMAND_TYPE_GET_SYSTEM_INFO         CommandType = 22
+	CommandType_COMMAND_TYPE_RUNTIME_TYPE            CommandType = 23
+	CommandType_COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER CommandType = 24
 )
 
 // Enum value maps for CommandType.
@@ -80,32 +81,34 @@ var (
 		21: "COMMAND_TYPE_DELETE_PVCS",
 		22: "COMMAND_TYPE_GET_SYSTEM_INFO",
 		23: "COMMAND_TYPE_RUNTIME_TYPE",
+		24: "COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER",
 	}
 	CommandType_value = map[string]int32{
-		"COMMAND_TYPE_UNSPECIFIED":       0,
-		"COMMAND_TYPE_LIST_IMAGES":       1,
-		"COMMAND_TYPE_PULL_IMAGE":        2,
-		"COMMAND_TYPE_LIST_PODS":         3,
-		"COMMAND_TYPE_CREATE_POD":        4,
-		"COMMAND_TYPE_DELETE_POD":        5,
-		"COMMAND_TYPE_STOP_POD":          6,
-		"COMMAND_TYPE_START_POD":         7,
-		"COMMAND_TYPE_INSPECT_POD":       8,
-		"COMMAND_TYPE_POD_EXISTS":        9,
-		"COMMAND_TYPE_POD_LOGS":          10,
-		"COMMAND_TYPE_GET_POD_RESOURCES": 11,
-		"COMMAND_TYPE_LIST_SECRETS":      12,
-		"COMMAND_TYPE_DELETE_SECRET":     13,
-		"COMMAND_TYPE_SECRET_EXISTS":     14,
-		"COMMAND_TYPE_DELETE_VOLUME":     15,
-		"COMMAND_TYPE_VOLUME_EXISTS":     16,
-		"COMMAND_TYPE_INSPECT_CONTAINER": 17,
-		"COMMAND_TYPE_CONTAINER_EXISTS":  18,
-		"COMMAND_TYPE_CONTAINER_LOGS":    19,
-		"COMMAND_TYPE_LIST_ROUTES":       20,
-		"COMMAND_TYPE_DELETE_PVCS":       21,
-		"COMMAND_TYPE_GET_SYSTEM_INFO":   22,
-		"COMMAND_TYPE_RUNTIME_TYPE":      23,
+		"COMMAND_TYPE_UNSPECIFIED":             0,
+		"COMMAND_TYPE_LIST_IMAGES":             1,
+		"COMMAND_TYPE_PULL_IMAGE":              2,
+		"COMMAND_TYPE_LIST_PODS":               3,
+		"COMMAND_TYPE_CREATE_POD":              4,
+		"COMMAND_TYPE_DELETE_POD":              5,
+		"COMMAND_TYPE_STOP_POD":                6,
+		"COMMAND_TYPE_START_POD":               7,
+		"COMMAND_TYPE_INSPECT_POD":             8,
+		"COMMAND_TYPE_POD_EXISTS":              9,
+		"COMMAND_TYPE_POD_LOGS":                10,
+		"COMMAND_TYPE_GET_POD_RESOURCES":       11,
+		"COMMAND_TYPE_LIST_SECRETS":            12,
+		"COMMAND_TYPE_DELETE_SECRET":           13,
+		"COMMAND_TYPE_SECRET_EXISTS":           14,
+		"COMMAND_TYPE_DELETE_VOLUME":           15,
+		"COMMAND_TYPE_VOLUME_EXISTS":           16,
+		"COMMAND_TYPE_INSPECT_CONTAINER":       17,
+		"COMMAND_TYPE_CONTAINER_EXISTS":        18,
+		"COMMAND_TYPE_CONTAINER_LOGS":          19,
+		"COMMAND_TYPE_LIST_ROUTES":             20,
+		"COMMAND_TYPE_DELETE_PVCS":             21,
+		"COMMAND_TYPE_GET_SYSTEM_INFO":         22,
+		"COMMAND_TYPE_RUNTIME_TYPE":            23,
+		"COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER": 24,
 	}
 )
 
@@ -120,11 +123,11 @@ func (x CommandType) String() string {
 }
 
 func (CommandType) Descriptor() protoreflect.EnumDescriptor {
-	return file_agent_proto_enumTypes[0].Descriptor()
+	return file_internal_pkg_agent_proto_agent_proto_enumTypes[0].Descriptor()
 }
 
 func (CommandType) Type() protoreflect.EnumType {
-	return &file_agent_proto_enumTypes[0]
+	return &file_internal_pkg_agent_proto_agent_proto_enumTypes[0]
 }
 
 func (x CommandType) Number() protoreflect.EnumNumber {
@@ -133,7 +136,7 @@ func (x CommandType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CommandType.Descriptor instead.
 func (CommandType) EnumDescriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{0}
+	return file_internal_pkg_agent_proto_agent_proto_rawDescGZIP(), []int{0}
 }
 
 type RegisterRequest struct {
@@ -148,7 +151,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_agent_proto_msgTypes[0]
+	mi := &file_internal_pkg_agent_proto_agent_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -160,7 +163,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[0]
+	mi := &file_internal_pkg_agent_proto_agent_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -173,7 +176,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{0}
+	return file_internal_pkg_agent_proto_agent_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RegisterRequest) GetAgentId() string {
@@ -216,7 +219,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_agent_proto_msgTypes[1]
+	mi := &file_internal_pkg_agent_proto_agent_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -228,7 +231,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[1]
+	mi := &file_internal_pkg_agent_proto_agent_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -241,7 +244,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{1}
+	return file_internal_pkg_agent_proto_agent_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RegisterResponse) GetAgentId() string {
@@ -276,7 +279,7 @@ type Command struct {
 
 func (x *Command) Reset() {
 	*x = Command{}
-	mi := &file_agent_proto_msgTypes[2]
+	mi := &file_internal_pkg_agent_proto_agent_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -288,7 +291,7 @@ func (x *Command) String() string {
 func (*Command) ProtoMessage() {}
 
 func (x *Command) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[2]
+	mi := &file_internal_pkg_agent_proto_agent_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -301,7 +304,7 @@ func (x *Command) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Command.ProtoReflect.Descriptor instead.
 func (*Command) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{2}
+	return file_internal_pkg_agent_proto_agent_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Command) GetCommandId() string {
@@ -339,7 +342,7 @@ type CommandResult struct {
 
 func (x *CommandResult) Reset() {
 	*x = CommandResult{}
-	mi := &file_agent_proto_msgTypes[3]
+	mi := &file_internal_pkg_agent_proto_agent_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -351,7 +354,7 @@ func (x *CommandResult) String() string {
 func (*CommandResult) ProtoMessage() {}
 
 func (x *CommandResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[3]
+	mi := &file_internal_pkg_agent_proto_agent_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -364,7 +367,7 @@ func (x *CommandResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResult.ProtoReflect.Descriptor instead.
 func (*CommandResult) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{3}
+	return file_internal_pkg_agent_proto_agent_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CommandResult) GetCommandId() string {
@@ -409,11 +412,11 @@ func (x *CommandResult) GetAgentId() string {
 	return ""
 }
 
-var File_agent_proto protoreflect.FileDescriptor
+var File_internal_pkg_agent_proto_agent_proto protoreflect.FileDescriptor
 
-const file_agent_proto_rawDesc = "" +
+const file_internal_pkg_agent_proto_agent_proto_rawDesc = "" +
 	"\n" +
-	"\vagent.proto\x12\bagent.v1\"\xe2\x02\n" +
+	"$internal/pkg/agent/proto/agent.proto\x12\bagent.v1\"\xe2\x02\n" +
 	"\x0fRegisterRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12(\n" +
 	"\x10pre_shared_token\x18\x02 \x01(\tR\x0epreSharedToken\x12=\n" +
@@ -442,7 +445,7 @@ const file_agent_proto_rawDesc = "" +
 	"\x04data\x18\x03 \x01(\fR\x04data\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12!\n" +
 	"\fis_heartbeat\x18\x05 \x01(\bR\visHeartbeat\x12\x19\n" +
-	"\bagent_id\x18\x06 \x01(\tR\aagentId*\xf1\x05\n" +
+	"\bagent_id\x18\x06 \x01(\tR\aagentId*\x9b\x06\n" +
 	"\vCommandType\x12\x1c\n" +
 	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18COMMAND_TYPE_LIST_IMAGES\x10\x01\x12\x1b\n" +
@@ -468,26 +471,27 @@ const file_agent_proto_rawDesc = "" +
 	"\x18COMMAND_TYPE_LIST_ROUTES\x10\x14\x12\x1c\n" +
 	"\x18COMMAND_TYPE_DELETE_PVCS\x10\x15\x12 \n" +
 	"\x1cCOMMAND_TYPE_GET_SYSTEM_INFO\x10\x16\x12\x1d\n" +
-	"\x19COMMAND_TYPE_RUNTIME_TYPE\x10\x172\x92\x01\n" +
+	"\x19COMMAND_TYPE_RUNTIME_TYPE\x10\x17\x12(\n" +
+	"$COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER\x10\x182\x92\x01\n" +
 	"\fAgentGateway\x12A\n" +
 	"\bRegister\x12\x19.agent.v1.RegisterRequest\x1a\x1a.agent.v1.RegisterResponse\x12?\n" +
 	"\rCommandStream\x12\x17.agent.v1.CommandResult\x1a\x11.agent.v1.Command(\x010\x01BEZCgithub.com/project-ai-services/ai-services/internal/pkg/agent/protob\x06proto3"
 
 var (
-	file_agent_proto_rawDescOnce sync.Once
-	file_agent_proto_rawDescData []byte
+	file_internal_pkg_agent_proto_agent_proto_rawDescOnce sync.Once
+	file_internal_pkg_agent_proto_agent_proto_rawDescData []byte
 )
 
-func file_agent_proto_rawDescGZIP() []byte {
-	file_agent_proto_rawDescOnce.Do(func() {
-		file_agent_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)))
+func file_internal_pkg_agent_proto_agent_proto_rawDescGZIP() []byte {
+	file_internal_pkg_agent_proto_agent_proto_rawDescOnce.Do(func() {
+		file_internal_pkg_agent_proto_agent_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_internal_pkg_agent_proto_agent_proto_rawDesc), len(file_internal_pkg_agent_proto_agent_proto_rawDesc)))
 	})
-	return file_agent_proto_rawDescData
+	return file_internal_pkg_agent_proto_agent_proto_rawDescData
 }
 
-var file_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
-var file_agent_proto_goTypes = []any{
+var file_internal_pkg_agent_proto_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_internal_pkg_agent_proto_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_internal_pkg_agent_proto_agent_proto_goTypes = []any{
 	(CommandType)(0),         // 0: agent.v1.CommandType
 	(*RegisterRequest)(nil),  // 1: agent.v1.RegisterRequest
 	(*RegisterResponse)(nil), // 2: agent.v1.RegisterResponse
@@ -496,7 +500,7 @@ var file_agent_proto_goTypes = []any{
 	nil,                      // 5: agent.v1.RegisterRequest.LabelsEntry
 	nil,                      // 6: agent.v1.RegisterRequest.CapabilitiesEntry
 }
-var file_agent_proto_depIdxs = []int32{
+var file_internal_pkg_agent_proto_agent_proto_depIdxs = []int32{
 	5, // 0: agent.v1.RegisterRequest.labels:type_name -> agent.v1.RegisterRequest.LabelsEntry
 	6, // 1: agent.v1.RegisterRequest.capabilities:type_name -> agent.v1.RegisterRequest.CapabilitiesEntry
 	0, // 2: agent.v1.Command.type:type_name -> agent.v1.CommandType
@@ -511,27 +515,27 @@ var file_agent_proto_depIdxs = []int32{
 	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_agent_proto_init() }
-func file_agent_proto_init() {
-	if File_agent_proto != nil {
+func init() { file_internal_pkg_agent_proto_agent_proto_init() }
+func file_internal_pkg_agent_proto_agent_proto_init() {
+	if File_internal_pkg_agent_proto_agent_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_pkg_agent_proto_agent_proto_rawDesc), len(file_internal_pkg_agent_proto_agent_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_agent_proto_goTypes,
-		DependencyIndexes: file_agent_proto_depIdxs,
-		EnumInfos:         file_agent_proto_enumTypes,
-		MessageInfos:      file_agent_proto_msgTypes,
+		GoTypes:           file_internal_pkg_agent_proto_agent_proto_goTypes,
+		DependencyIndexes: file_internal_pkg_agent_proto_agent_proto_depIdxs,
+		EnumInfos:         file_internal_pkg_agent_proto_agent_proto_enumTypes,
+		MessageInfos:      file_internal_pkg_agent_proto_agent_proto_msgTypes,
 	}.Build()
-	File_agent_proto = out.File
-	file_agent_proto_goTypes = nil
-	file_agent_proto_depIdxs = nil
+	File_internal_pkg_agent_proto_agent_proto = out.File
+	file_internal_pkg_agent_proto_agent_proto_goTypes = nil
+	file_internal_pkg_agent_proto_agent_proto_depIdxs = nil
 }
