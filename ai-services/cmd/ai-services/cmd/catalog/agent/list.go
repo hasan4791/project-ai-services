@@ -35,9 +35,9 @@ func newListCmd() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "AGENT ID\tSTATUS\tLAST HEARTBEAT\tLABELS")
+			fmt.Fprintln(w, "AGENT NAME\tSTATUS\tLAST HEARTBEAT\tLABELS")
 			for _, a := range agents {
-				agentID, _ := a["agent_id"].(string)
+				agentName, _ := a["agent_name"].(string)
 				status, _ := a["status"].(string)
 				hb, _ := a["last_heartbeat"].(string)
 				if hb == "" {
@@ -52,7 +52,7 @@ func newListCmd() *cobra.Command {
 						labels += fmt.Sprintf("%s=%v", k, v)
 					}
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", agentID, status, hb, labels)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", agentName, status, hb, labels)
 			}
 			w.Flush()
 

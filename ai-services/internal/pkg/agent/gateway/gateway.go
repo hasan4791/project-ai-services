@@ -65,29 +65,25 @@ func (g *Gateway) Start(ctx context.Context, addr string) error {
 
 // Register implements AgentGatewayServer. Workers call this once at bootstrap.
 func (g *Gateway) Register(ctx context.Context, req *agentpb.RegisterRequest) (*agentpb.RegisterResponse, error) {
-	agentID := req.GetAgentId()
-	logger.InfofCtx(ctx, "AgentGateway: Register request from agent_id=%s", agentID)
+	agentName := req.GetAgentName()
+	logger.InfofCtx(ctx, "AgentGateway: Register request from agent_name=%s", agentName)
 
 	// Validate the bootstrap token.
-	boundAgentID, err := g.tokenStore.Validate(req.GetPreSharedToken())
-	if err != nil {
-		logger.WarningfCtx(ctx, "AgentGateway: rejected registration for %s: %v", agentID, err)
+	if err := g.tokenStore.Validate(req.GetPreSharedToken()); err != nil {
+		logger.WarningfCtx(ctx, "AgentGateway: rejected registration for %s: %v", agentName, err)
 		return nil, fmt.Errorf("registration rejected: %w", err)
-	}
-	if boundAgentID != agentID {
-		return nil, fmt.Errorf("registration rejected: token not issued for agent_id %s", agentID)
 	}
 
 	entry, err := g.registry.Upsert(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to upsert agent: %w", err)
 	}
-	g.registry.MarkReady(ctx, entry.AgentID)
+	g.registry.MarkReady(ctx, entry.AgentName)
 
-	logger.InfofCtx(ctx, "AgentGateway: agent %s registered and marked READY", agentID)
+	logger.InfofCtx(ctx, "AgentGateway: agent %s registered and marked READY", agentName)
 
 	return &agentpb.RegisterResponse{
-		AgentId: agentID,
+		AgentName: agentName,
 		// TlsCertPem / TlsKeyPem intentionally empty; mTLS added in a future iteration.
 	}, nil
 }
@@ -105,24 +101,24 @@ func (g *Gateway) CommandStream(stream grpc.BidiStreamingServer[agentpb.CommandR
 	if err != nil {
 		return fmt.Errorf("CommandStream: failed to receive first message: %w", err)
 	}
-	agentID := firstMsg.GetAgentId()
-	if agentID == "" {
-		return fmt.Errorf("CommandStream: first message missing agent_id")
+	agentName := firstMsg.GetAgentName()
+	if agentName == "" {
+		return fmt.Errorf("CommandStream: first message missing agent_name")
 	}
 
-	entry, ok := g.registry.Get(agentID)
+	entry, ok := g.registry.Get(agentName)
 	if !ok {
-		return fmt.Errorf("CommandStream: unknown agent_id %s – call Register first", agentID)
+		return fmt.Errorf("CommandStream: unknown agent %s – call Register first", agentName)
 	}
 
-	g.registry.MarkReady(ctx, agentID)
-	logger.InfofCtx(ctx, "AgentGateway: CommandStream opened for agent %s", agentID)
+	g.registry.MarkReady(ctx, agentName)
+	logger.InfofCtx(ctx, "AgentGateway: CommandStream opened for agent %s", agentName)
 
 	// Deliver the first message if it is a real result (not a heartbeat).
 	if !firstMsg.GetIsHeartbeat() {
 		g.registry.DeliverResult(firstMsg)
 	} else {
-		g.registry.UpdateHeartbeat(ctx, agentID)
+		g.registry.UpdateHeartbeat(ctx, agentName)
 	}
 
 	// goroutine: read results from the agent and dispatch to waiting callers.
@@ -134,12 +130,12 @@ func (g *Gateway) CommandStream(stream grpc.BidiStreamingServer[agentpb.CommandR
 				recvErrCh <- err
 				return
 			}
-			// Ensure agent_id is always stamped on the result.
-			if res.AgentId == "" {
-				res.AgentId = agentID
+			// Ensure agent_name is always stamped on the result.
+			if res.AgentName == "" {
+				res.AgentName = agentName
 			}
 			if res.GetIsHeartbeat() {
-				g.registry.UpdateHeartbeat(ctx, agentID)
+				g.registry.UpdateHeartbeat(ctx, agentName)
 				continue
 			}
 			g.registry.DeliverResult(res)
@@ -150,22 +146,22 @@ func (g *Gateway) CommandStream(stream grpc.BidiStreamingServer[agentpb.CommandR
 	for {
 		select {
 		case <-ctx.Done():
-			g.registry.MarkDisconnected(context.Background(), agentID)
-			logger.InfofCtx(ctx, "AgentGateway: context done for agent %s", agentID)
+			g.registry.MarkDisconnected(context.Background(), agentName)
+			logger.InfofCtx(ctx, "AgentGateway: context done for agent %s", agentName)
 			return ctx.Err()
 
 		case err := <-recvErrCh:
-			g.registry.MarkDisconnected(context.Background(), agentID)
-			logger.InfofCtx(ctx, "AgentGateway: agent %s disconnected: %v", agentID, err)
+			g.registry.MarkDisconnected(context.Background(), agentName)
+			logger.InfofCtx(ctx, "AgentGateway: agent %s disconnected: %v", agentName, err)
 			return err
 
 		case cmd, ok := <-entry.CommandCh:
 			if !ok {
-				return fmt.Errorf("CommandStream: command channel closed for agent %s", agentID)
+				return fmt.Errorf("CommandStream: command channel closed for agent %s", agentName)
 			}
 			if err := stream.Send(cmd); err != nil {
-				g.registry.MarkDisconnected(context.Background(), agentID)
-				return fmt.Errorf("CommandStream: send to agent %s: %w", agentID, err)
+				g.registry.MarkDisconnected(context.Background(), agentName)
+				return fmt.Errorf("CommandStream: send to agent %s: %w", agentName, err)
 			}
 		}
 	}

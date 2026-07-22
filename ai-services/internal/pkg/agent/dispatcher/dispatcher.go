@@ -35,6 +35,6 @@ func (d *AgentDispatcher) SelectAgent(selector map[string]string) (runtime.Runti
 		return nil, "", fmt.Errorf("dispatcher: no agent available: %w", err)
 	}
 
-	rt := remote.New(entry.AgentID, d.registry)
-	return rt, entry.AgentID, nil
+	rt := remote.New(entry.AgentName, d.registry)
+	return rt, entry.AgentName, nil
 }

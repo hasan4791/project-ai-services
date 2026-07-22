@@ -10,7 +10,7 @@ import (
 
 func newDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "delete <agent-id>",
+		Use:   "delete <agent-name>",
 		Short: "Delete a registered worker agent",
 		Long: `Remove a worker agent from the control-plane AgentGateway registry.
 
@@ -25,18 +25,18 @@ issued token.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
-			agentID := args[0]
+			agentName := args[0]
 
 			client, err := catalogclient.New()
 			if err != nil {
 				return fmt.Errorf("not logged in – run 'ai-services catalog login' first: %w", err)
 			}
 
-			if err := client.DeleteAgent(agentID); err != nil {
+			if err := client.DeleteAgent(agentName); err != nil {
 				return fmt.Errorf("delete agent failed: %w", err)
 			}
 
-			fmt.Printf("Agent %q deleted.\n", agentID)
+			fmt.Printf("Agent %q deleted.\n", agentName)
 			return nil
 		},
 	}

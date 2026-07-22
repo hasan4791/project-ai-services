@@ -28,7 +28,7 @@ const (
 
 // Config holds the configuration for the agent daemon.
 type Config struct {
-	AgentID         string
+	AgentName       string
 	ControlPlaneURL string // e.g. "lpar-0.example.com:9090"
 	PreSharedToken  string
 	Labels          map[string]string
@@ -53,8 +53,8 @@ func New(cfg Config, rt runtime.Runtime) *Daemon {
 // (i.e. agentbootstrap.Register succeeded). Run only maintains the CommandStream,
 // reconnecting with exponential backoff on disconnection.
 func (d *Daemon) Run(ctx context.Context) error {
-	logger.InfofCtx(ctx, "agent daemon starting: agent_id=%s control_plane=%s runtime=%s",
-		d.cfg.AgentID, d.cfg.ControlPlaneURL, d.rt.Type())
+	logger.InfofCtx(ctx, "agent daemon starting: agent_name=%s control_plane=%s runtime=%s",
+		d.cfg.AgentName, d.cfg.ControlPlaneURL, d.rt.Type())
 
 	conn, err := grpc.NewClient(d.cfg.ControlPlaneURL,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -104,7 +104,7 @@ func (d *Daemon) runStream(ctx context.Context, client agentpb.AgentGatewayClien
 
 	// Send initial heartbeat so the gateway can identify us.
 	if err := stream.Send(&agentpb.CommandResult{
-		AgentId:     d.cfg.AgentID,
+		AgentName:   d.cfg.AgentName,
 		IsHeartbeat: true,
 		Success:     true,
 	}); err != nil {
@@ -143,7 +143,7 @@ func (d *Daemon) heartbeatLoop(ctx context.Context, stream agentpb.AgentGateway_
 			return
 		case <-ticker.C:
 			_ = stream.Send(&agentpb.CommandResult{
-				AgentId:     d.cfg.AgentID,
+				AgentName:   d.cfg.AgentName,
 				IsHeartbeat: true,
 				Success:     true,
 			})
@@ -158,7 +158,7 @@ func (d *Daemon) executeCommand(ctx context.Context, cmd *agentpb.Command) *agen
 
 	r := &agentpb.CommandResult{
 		CommandId: cmd.GetCommandId(),
-		AgentId:   d.cfg.AgentID,
+		AgentName: d.cfg.AgentName,
 	}
 	if err != nil {
 		r.Success = false

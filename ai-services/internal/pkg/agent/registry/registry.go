@@ -37,10 +37,10 @@ const (
 
 // AgentEntry is the in-memory record for a connected agent.
 type AgentEntry struct {
-	AgentID      string
-	Labels       map[string]string
-	Capabilities map[string]string
-	Status       AgentStatus
+	AgentName     string
+	Labels        map[string]string
+	Capabilities  map[string]string
+	Status        AgentStatus
 	LastHeartbeat time.Time
 	RegisteredAt  time.Time
 
@@ -150,16 +150,16 @@ func (r *Registry) Upsert(ctx context.Context, req *agentpb.RegisterRequest) (*A
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	agentID := req.GetAgentId()
-	entry, exists := r.agents[agentID]
+	agentName := req.GetAgentName()
+	entry, exists := r.agents[agentName]
 	if !exists {
 		entry = &AgentEntry{
-			AgentID:      agentID,
+			AgentName:    agentName,
 			RegisteredAt: time.Now(),
 			CommandCh:    make(chan *agentpb.Command, 32),
 			results:      make(map[string]chan *agentpb.CommandResult),
 		}
-		r.agents[agentID] = entry
+		r.agents[agentName] = entry
 	}
 
 	entry.Labels = req.GetLabels()
@@ -169,7 +169,7 @@ func (r *Registry) Upsert(ctx context.Context, req *agentpb.RegisterRequest) (*A
 
 	if r.pool != nil {
 		if err := r.upsertDB(ctx, entry); err != nil {
-			logger.WarningfCtx(ctx, "agent registry: DB upsert failed for %s: %v", agentID, err)
+			logger.WarningfCtx(ctx, "agent registry: DB upsert failed for %s: %v", agentName, err)
 		}
 	}
 
@@ -177,30 +177,30 @@ func (r *Registry) Upsert(ctx context.Context, req *agentpb.RegisterRequest) (*A
 }
 
 // MarkReady transitions an agent to READY status.
-func (r *Registry) MarkReady(ctx context.Context, agentID string) {
-	r.updateStatus(ctx, agentID, AgentStatusReady)
+func (r *Registry) MarkReady(ctx context.Context, agentName string) {
+	r.updateStatus(ctx, agentName, AgentStatusReady)
 }
 
 // MarkDisconnected transitions an agent to DISCONNECTED status.
-func (r *Registry) MarkDisconnected(ctx context.Context, agentID string) {
-	r.updateStatus(ctx, agentID, AgentStatusDisconnected)
+func (r *Registry) MarkDisconnected(ctx context.Context, agentName string) {
+	r.updateStatus(ctx, agentName, AgentStatusDisconnected)
 }
 
 // UpdateHeartbeat refreshes the last_heartbeat timestamp for the agent.
-func (r *Registry) UpdateHeartbeat(ctx context.Context, agentID string) {
+func (r *Registry) UpdateHeartbeat(ctx context.Context, agentName string) {
 	r.mu.Lock()
-	entry, ok := r.agents[agentID]
+	entry, ok := r.agents[agentName]
 	if ok {
 		entry.LastHeartbeat = time.Now()
 	}
 	r.mu.Unlock()
 	if ok && r.pool != nil {
-		r.updateHeartbeatDB(ctx, agentID)
+		r.updateHeartbeatDB(ctx, agentName)
 	}
 }
 
 // SelectAgent picks the best available READY agent matching the label selector.
-// The reserved key "agent_id" matches directly against the agent's registered ID,
+// The reserved key "agent_name" matches directly against the agent's registered name,
 // so callers can target a specific worker without requiring a custom label.
 func (r *Registry) SelectAgent(selector map[string]string) (*AgentEntry, error) {
 	r.mu.RLock()
@@ -223,12 +223,12 @@ func (r *Registry) SelectAgent(selector map[string]string) (*AgentEntry, error) 
 }
 
 // agentMatches reports whether entry satisfies every key in selector.
-// The key "agent_id" is matched against the agent's registered ID directly;
+// The key "agent_name" is matched against the agent's registered name directly;
 // all other keys are matched against the agent's label map.
 func agentMatches(entry *AgentEntry, selector map[string]string) bool {
 	for k, v := range selector {
-		if k == "agent_id" {
-			if entry.AgentID != v {
+		if k == "agent_name" {
+			if entry.AgentName != v {
 				return false
 			}
 		} else {
@@ -241,37 +241,37 @@ func agentMatches(entry *AgentEntry, selector map[string]string) bool {
 }
 
 // Get returns the in-memory entry for an agent.
-func (r *Registry) Get(agentID string) (*AgentEntry, bool) {
+func (r *Registry) Get(agentName string) (*AgentEntry, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	e, ok := r.agents[agentID]
+	e, ok := r.agents[agentName]
 	return e, ok
 }
 
 // DeliverResult routes an incoming CommandResult to the waiting RemoteRuntime call.
 func (r *Registry) DeliverResult(res *agentpb.CommandResult) {
 	r.mu.RLock()
-	entry, ok := r.agents[res.GetAgentId()]
+	entry, ok := r.agents[res.GetAgentName()]
 	r.mu.RUnlock()
 	if ok {
 		entry.deliverResult(res)
 	}
 }
 
-// WaitForResult returns a channel that will receive the result for commandID on agentID.
-func (r *Registry) WaitForResult(agentID, commandID string) (chan *agentpb.CommandResult, error) {
+// WaitForResult returns a channel that will receive the result for commandID on agentName.
+func (r *Registry) WaitForResult(agentName, commandID string) (chan *agentpb.CommandResult, error) {
 	r.mu.RLock()
-	entry, ok := r.agents[agentID]
+	entry, ok := r.agents[agentName]
 	r.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("agent %s not found in registry", agentID)
+		return nil, fmt.Errorf("agent %s not found in registry", agentName)
 	}
 	return entry.waitForResult(commandID), nil
 }
 
 // AgentStatusInfo is a lightweight snapshot for CLI status output.
 type AgentStatusInfo struct {
-	AgentID       string
+	AgentName     string
 	Status        AgentStatus
 	Labels        map[string]string
 	LastHeartbeat time.Time
@@ -287,7 +287,7 @@ func (r *Registry) Snapshot() []AgentStatusInfo {
 	out := make([]AgentStatusInfo, 0, len(r.agents))
 	for _, e := range r.agents {
 		out = append(out, AgentStatusInfo{
-			AgentID:       e.AgentID,
+			AgentName:     e.AgentName,
 			Status:        e.Status,
 			Labels:        e.Labels,
 			LastHeartbeat: e.LastHeartbeat,
@@ -299,22 +299,21 @@ func (r *Registry) Snapshot() []AgentStatusInfo {
 }
 
 // Delete removes an agent from the in-memory registry and the database.
-// The active CommandStream (if any) will detect the missing entry and disconnect.
-func (r *Registry) Delete(ctx context.Context, agentID string) error {
+func (r *Registry) Delete(ctx context.Context, agentName string) error {
 	r.mu.Lock()
-	_, ok := r.agents[agentID]
+	_, ok := r.agents[agentName]
 	if ok {
-		delete(r.agents, agentID)
+		delete(r.agents, agentName)
 	}
 	r.mu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("agent %s not found", agentID)
+		return fmt.Errorf("agent %s not found", agentName)
 	}
 
 	if r.pool != nil {
-		if _, err := r.pool.Exec(ctx, `DELETE FROM agents WHERE agent_id = $1`, agentID); err != nil {
-			logger.WarningfCtx(ctx, "agent registry: DB delete failed for %s: %v", agentID, err)
+		if _, err := r.pool.Exec(ctx, `DELETE FROM agents WHERE agent_name = $1`, agentName); err != nil {
+			logger.WarningfCtx(ctx, "agent registry: DB delete failed for %s: %v", agentName, err)
 		}
 	}
 
@@ -325,15 +324,15 @@ func (r *Registry) Delete(ctx context.Context, agentID string) error {
 // Internal helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-func (r *Registry) updateStatus(ctx context.Context, agentID string, status AgentStatus) {
+func (r *Registry) updateStatus(ctx context.Context, agentName string, status AgentStatus) {
 	r.mu.Lock()
-	entry, ok := r.agents[agentID]
+	entry, ok := r.agents[agentName]
 	if ok {
 		entry.Status = status
 	}
 	r.mu.Unlock()
 	if ok && r.pool != nil {
-		r.updateStatusDB(ctx, agentID, status)
+		r.updateStatusDB(ctx, agentName, status)
 	}
 }
 
@@ -343,9 +342,9 @@ func (r *Registry) updateStatus(ctx context.Context, agentID string, status Agen
 // ──────────────────────────────────────────────────────────────────────────────
 
 const upsertAgentSQL = `
-INSERT INTO agents (agent_id, labels, capabilities, status, last_heartbeat, registered_at, updated_at)
+INSERT INTO agents (agent_name, labels, capabilities, status, last_heartbeat, registered_at, updated_at)
 VALUES ($1, $2::jsonb, $3::jsonb, $4, NOW(), NOW(), NOW())
-ON CONFLICT (agent_id) DO UPDATE
+ON CONFLICT (agent_name) DO UPDATE
   SET labels         = EXCLUDED.labels,
       capabilities   = EXCLUDED.capabilities,
       status         = EXCLUDED.status,
@@ -355,7 +354,7 @@ ON CONFLICT (agent_id) DO UPDATE
 
 func (r *Registry) upsertDB(ctx context.Context, e *AgentEntry) error {
 	_, err := r.pool.Exec(ctx, upsertAgentSQL,
-		e.AgentID,
+		e.AgentName,
 		mapToJSONB(e.Labels),
 		mapToJSONB(e.Capabilities),
 		string(e.Status),
@@ -363,19 +362,19 @@ func (r *Registry) upsertDB(ctx context.Context, e *AgentEntry) error {
 	return err
 }
 
-const updateStatusSQL = `UPDATE agents SET status = $2, updated_at = NOW() WHERE agent_id = $1`
+const updateStatusSQL = `UPDATE agents SET status = $2, updated_at = NOW() WHERE agent_name = $1`
 
-func (r *Registry) updateStatusDB(ctx context.Context, agentID string, status AgentStatus) {
-	if _, err := r.pool.Exec(ctx, updateStatusSQL, agentID, string(status)); err != nil {
-		logger.WarningfCtx(ctx, "agent registry: DB status update failed for %s: %v", agentID, err)
+func (r *Registry) updateStatusDB(ctx context.Context, agentName string, status AgentStatus) {
+	if _, err := r.pool.Exec(ctx, updateStatusSQL, agentName, string(status)); err != nil {
+		logger.WarningfCtx(ctx, "agent registry: DB status update failed for %s: %v", agentName, err)
 	}
 }
 
-const updateHeartbeatSQL = `UPDATE agents SET last_heartbeat = NOW(), updated_at = NOW() WHERE agent_id = $1`
+const updateHeartbeatSQL = `UPDATE agents SET last_heartbeat = NOW(), updated_at = NOW() WHERE agent_name = $1`
 
-func (r *Registry) updateHeartbeatDB(ctx context.Context, agentID string) {
-	if _, err := r.pool.Exec(ctx, updateHeartbeatSQL, agentID); err != nil {
-		logger.WarningfCtx(context.Background(), "agent registry: DB heartbeat update failed for %s: %v", agentID, err)
+func (r *Registry) updateHeartbeatDB(ctx context.Context, agentName string) {
+	if _, err := r.pool.Exec(ctx, updateHeartbeatSQL, agentName); err != nil {
+		logger.WarningfCtx(context.Background(), "agent registry: DB heartbeat update failed for %s: %v", agentName, err)
 	}
 }
 
@@ -401,8 +400,9 @@ func mapToJSONB(m map[string]string) string {
 // ──────────────────────────────────────────────────────────────────────────────
 
 // TokenRecord holds a single-use bootstrap token.
+// Tokens are not pre-bound to an agent name; the name is supplied by the
+// agent itself at registration time (RegisterRequest.AgentName).
 type TokenRecord struct {
-	AgentID   string
 	Token     string
 	ExpiresAt time.Time
 	Used      bool
@@ -419,12 +419,13 @@ func NewTokenStore() *TokenStore {
 	return &TokenStore{tokens: make(map[string]*TokenRecord)}
 }
 
-// IssueToken generates a new 24-hour token for agentID and returns it.
-func (ts *TokenStore) IssueToken(agentID string) string {
+// IssueToken generates a new 24-hour single-use token and returns it.
+// The token is not bound to any agent name; the name is provided by the
+// agent itself when it calls Register.
+func (ts *TokenStore) IssueToken() string {
 	token := uuid.NewString()
 	ts.mu.Lock()
 	ts.tokens[token] = &TokenRecord{
-		AgentID:   agentID,
 		Token:     token,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
@@ -432,21 +433,22 @@ func (ts *TokenStore) IssueToken(agentID string) string {
 	return token
 }
 
-// Validate checks token validity, marks it used, and returns the bound agentID.
-func (ts *TokenStore) Validate(token string) (string, error) {
+// Validate checks token validity and marks it used. Returns an error if the
+// token is unknown, already used, or expired.
+func (ts *TokenStore) Validate(token string) error {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
 	rec, ok := ts.tokens[token]
 	if !ok {
-		return "", fmt.Errorf("bootstrap token not found")
+		return fmt.Errorf("bootstrap token not found")
 	}
 	if rec.Used {
-		return "", fmt.Errorf("bootstrap token already used")
+		return fmt.Errorf("bootstrap token already used")
 	}
 	if time.Now().After(rec.ExpiresAt) {
-		return "", fmt.Errorf("bootstrap token expired")
+		return fmt.Errorf("bootstrap token expired")
 	}
 	rec.Used = true
-	return rec.AgentID, nil
+	return nil
 }

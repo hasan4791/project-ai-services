@@ -25,14 +25,14 @@ service AgentGateway {
 // ──────────────────────────────────────────────────────────────────────────────
 
 message RegisterRequest {
-  string agent_id         = 1;
+  string agent_name       = 1;
   string pre_shared_token = 2;
   map<string, string> labels       = 3;
   map<string, string> capabilities = 4;
 }
 
 message RegisterResponse {
-  string agent_id     = 1;
+  string agent_name   = 1;
   // tls_cert_pem / tls_key_pem are reserved for future mTLS support.
   string tls_cert_pem = 2;
   string tls_key_pem  = 3;
@@ -54,7 +54,7 @@ message CommandResult {
   bytes  data         = 3; // JSON-encoded response payload
   string error        = 4;
   bool   is_heartbeat = 5;
-  string agent_id     = 6; // set on first result and every heartbeat
+  string agent_name   = 6; // set on first result and every heartbeat
 }
 
 enum CommandType {

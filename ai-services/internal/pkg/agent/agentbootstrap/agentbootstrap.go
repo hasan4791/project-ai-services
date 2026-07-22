@@ -1,7 +1,6 @@
 // Package agentbootstrap handles agent-side registration with the control plane.
-// It reads /etc/ai-services/agent.conf, calls AgentGateway.Register, and writes
-// the returned TLS credentials to /etc/ai-services/agent-tls/ (reserved for
-// future mTLS implementation).
+// It calls AgentGateway.Register with the parameters provided at agent start,
+// and writes any returned TLS credentials to tlsDir (reserved for future mTLS).
 package agentbootstrap
 
 import (
@@ -9,7 +8,6 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -18,82 +16,53 @@ import (
 )
 
 const (
-	// DefaultAgentConfPath is the canonical location of the agent config file.
-	DefaultAgentConfPath = "/etc/ai-services/agent.conf"
 	// DefaultAgentTLSDir is where mTLS cert/key will be written in a future release.
 	DefaultAgentTLSDir = "/etc/ai-services/agent-tls"
 )
 
-// AgentConf is the on-disk configuration written by an admin before bootstrapping.
-type AgentConf struct {
-	ControlPlaneURL string            `yaml:"control_plane_url"` // e.g. "lpar-0.example.com:9090"
-	AgentID         string            `yaml:"agent_id"`
-	PreSharedToken  string            `yaml:"pre_shared_token"`
-	Runtime         string            `yaml:"runtime"`      // "podman" (default) or "openshift"
-	Labels          map[string]string `yaml:"labels"`
-	Capabilities    map[string]string `yaml:"capabilities"`
+// Config holds the parameters required to register an agent with the control plane.
+type Config struct {
+	ControlPlaneURL string            // e.g. "lpar-0.example.com:9090"
+	AgentName       string            // human-readable name for this worker
+	PreSharedToken  string            // single-use bootstrap token issued via catalog agent issue-token
+	Runtime         string            // "podman" (default) or "openshift"
+	Labels          map[string]string
+	Capabilities    map[string]string
 }
 
-// LoadConf reads and parses the agent configuration from path.
-func LoadConf(path string) (*AgentConf, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("agentbootstrap: read %s: %w", path, err)
-	}
-	var conf AgentConf
-	if err := yaml.Unmarshal(data, &conf); err != nil {
-		return nil, fmt.Errorf("agentbootstrap: parse %s: %w", path, err)
-	}
-	if conf.ControlPlaneURL == "" {
-		return nil, fmt.Errorf("agentbootstrap: control_plane_url is required in %s", path)
-	}
-	if conf.AgentID == "" {
-		return nil, fmt.Errorf("agentbootstrap: agent_id is required in %s", path)
-	}
-	if conf.PreSharedToken == "" {
-		return nil, fmt.Errorf("agentbootstrap: pre_shared_token is required in %s", path)
-	}
-	return &conf, nil
-}
-
-// Register calls AgentGateway.Register using the configuration at confPath.
+// Register calls AgentGateway.Register using the provided config.
 // On success it writes any returned TLS material to tlsDir (for future mTLS).
-func Register(ctx context.Context, confPath, tlsDir string) (*AgentConf, error) {
-	conf, err := LoadConf(confPath)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := grpc.NewClient(conf.ControlPlaneURL,
+func Register(ctx context.Context, cfg Config, tlsDir string) error {
+	conn, err := grpc.NewClient(cfg.ControlPlaneURL,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("agentbootstrap: dial %s: %w", conf.ControlPlaneURL, err)
+		return fmt.Errorf("agentbootstrap: dial %s: %w", cfg.ControlPlaneURL, err)
 	}
 	defer conn.Close()
 
 	client := agentpb.NewAgentGatewayClient(conn)
 	resp, err := client.Register(ctx, &agentpb.RegisterRequest{
-		AgentId:        conf.AgentID,
-		PreSharedToken: conf.PreSharedToken,
-		Labels:         conf.Labels,
-		Capabilities:   conf.Capabilities,
+		AgentName:      cfg.AgentName,
+		PreSharedToken: cfg.PreSharedToken,
+		Labels:         cfg.Labels,
+		Capabilities:   cfg.Capabilities,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("agentbootstrap: Register RPC failed: %w", err)
+		return fmt.Errorf("agentbootstrap: Register RPC failed: %w", err)
 	}
 
-	logger.InfofCtx(ctx, "agentbootstrap: registered as agent_id=%s", resp.GetAgentId())
+	logger.InfofCtx(ctx, "agentbootstrap: registered as agent_name=%s", resp.GetAgentName())
 
 	// Write TLS credentials if provided (future mTLS path).
 	if resp.GetTlsCertPem() != "" && resp.GetTlsKeyPem() != "" {
 		if err := writeTLSMaterial(tlsDir, resp.GetTlsCertPem(), resp.GetTlsKeyPem()); err != nil {
-			return nil, err
+			return err
 		}
 		logger.InfofCtx(ctx, "agentbootstrap: TLS material written to %s", tlsDir)
 	}
 
-	return conf, nil
+	return nil
 }
 
 func writeTLSMaterial(dir, certPEM, keyPEM string) error {

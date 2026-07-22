@@ -23,13 +23,13 @@ const commandTimeout = 5 * time.Minute
 // RemoteRuntime implements runtime.Runtime by sending commands over gRPC to a
 // specific remote agent.
 type RemoteRuntime struct {
-	agentID  string
-	registry *registry.Registry
+	agentName string
+	registry  *registry.Registry
 }
 
-// New creates a RemoteRuntime targeting the agent identified by agentID.
-func New(agentID string, reg *registry.Registry) *RemoteRuntime {
-	return &RemoteRuntime{agentID: agentID, registry: reg}
+// New creates a RemoteRuntime targeting the agent identified by agentName.
+func New(agentName string, reg *registry.Registry) *RemoteRuntime {
+	return &RemoteRuntime{agentName: agentName, registry: reg}
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -51,21 +51,21 @@ func (r *RemoteRuntime) dispatch(ctx context.Context, cmdType agentpb.CommandTyp
 	}
 
 	// Register result channel before sending to avoid a race.
-	resultCh, err := r.registry.WaitForResult(r.agentID, commandID)
+	resultCh, err := r.registry.WaitForResult(r.agentName, commandID)
 	if err != nil {
 		return err
 	}
 
 	// Deliver the command to the agent's CommandCh.
-	entry, ok := r.registry.Get(r.agentID)
+	entry, ok := r.registry.Get(r.agentName)
 	if !ok {
-		return fmt.Errorf("remote runtime: agent %s not found", r.agentID)
+		return fmt.Errorf("remote runtime: agent %s not found", r.agentName)
 	}
 
 	select {
 	case entry.CommandCh <- cmd:
 	case <-time.After(10 * time.Second):
-		return fmt.Errorf("remote runtime: timed out enqueuing command to agent %s", r.agentID)
+		return fmt.Errorf("remote runtime: timed out enqueuing command to agent %s", r.agentName)
 	}
 
 	// Determine effective timeout.
@@ -79,7 +79,7 @@ func (r *RemoteRuntime) dispatch(ctx context.Context, cmdType agentpb.CommandTyp
 	select {
 	case res := <-resultCh:
 		if !res.GetSuccess() {
-			return fmt.Errorf("remote runtime: agent %s returned error: %s", r.agentID, res.GetError())
+			return fmt.Errorf("remote runtime: agent %s returned error: %s", r.agentName, res.GetError())
 		}
 		if out != nil && len(res.GetData()) > 0 {
 			if err := json.Unmarshal(res.GetData(), out); err != nil {

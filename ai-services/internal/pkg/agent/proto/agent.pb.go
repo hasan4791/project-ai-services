@@ -141,7 +141,7 @@ func (CommandType) EnumDescriptor() ([]byte, []int) {
 
 type RegisterRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	AgentId        string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	AgentName      string                 `protobuf:"bytes,1,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
 	PreSharedToken string                 `protobuf:"bytes,2,opt,name=pre_shared_token,json=preSharedToken,proto3" json:"pre_shared_token,omitempty"`
 	Labels         map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Capabilities   map[string]string      `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
@@ -179,9 +179,9 @@ func (*RegisterRequest) Descriptor() ([]byte, []int) {
 	return file_internal_pkg_agent_proto_agent_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *RegisterRequest) GetAgentId() string {
+func (x *RegisterRequest) GetAgentName() string {
 	if x != nil {
-		return x.AgentId
+		return x.AgentName
 	}
 	return ""
 }
@@ -208,8 +208,8 @@ func (x *RegisterRequest) GetCapabilities() map[string]string {
 }
 
 type RegisterResponse struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	AgentId string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	AgentName string                 `protobuf:"bytes,1,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
 	// tls_cert_pem / tls_key_pem are reserved for future mTLS support.
 	TlsCertPem    string `protobuf:"bytes,2,opt,name=tls_cert_pem,json=tlsCertPem,proto3" json:"tls_cert_pem,omitempty"`
 	TlsKeyPem     string `protobuf:"bytes,3,opt,name=tls_key_pem,json=tlsKeyPem,proto3" json:"tls_key_pem,omitempty"`
@@ -247,9 +247,9 @@ func (*RegisterResponse) Descriptor() ([]byte, []int) {
 	return file_internal_pkg_agent_proto_agent_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *RegisterResponse) GetAgentId() string {
+func (x *RegisterResponse) GetAgentName() string {
 	if x != nil {
-		return x.AgentId
+		return x.AgentName
 	}
 	return ""
 }
@@ -335,7 +335,7 @@ type CommandResult struct {
 	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"` // JSON-encoded response payload
 	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	IsHeartbeat   bool                   `protobuf:"varint,5,opt,name=is_heartbeat,json=isHeartbeat,proto3" json:"is_heartbeat,omitempty"`
-	AgentId       string                 `protobuf:"bytes,6,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"` // set on first result and every heartbeat
+	AgentName     string                 `protobuf:"bytes,6,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"` // set on first result and every heartbeat
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -405,9 +405,9 @@ func (x *CommandResult) GetIsHeartbeat() bool {
 	return false
 }
 
-func (x *CommandResult) GetAgentId() string {
+func (x *CommandResult) GetAgentName() string {
 	if x != nil {
-		return x.AgentId
+		return x.AgentName
 	}
 	return ""
 }
@@ -416,9 +416,10 @@ var File_internal_pkg_agent_proto_agent_proto protoreflect.FileDescriptor
 
 const file_internal_pkg_agent_proto_agent_proto_rawDesc = "" +
 	"\n" +
-	"$internal/pkg/agent/proto/agent.proto\x12\bagent.v1\"\xe2\x02\n" +
-	"\x0fRegisterRequest\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12(\n" +
+	"$internal/pkg/agent/proto/agent.proto\x12\bagent.v1\"\xe6\x02\n" +
+	"\x0fRegisterRequest\x12\x1d\n" +
+	"\n" +
+	"agent_name\x18\x01 \x01(\tR\tagentName\x12(\n" +
 	"\x10pre_shared_token\x18\x02 \x01(\tR\x0epreSharedToken\x12=\n" +
 	"\x06labels\x18\x03 \x03(\v2%.agent.v1.RegisterRequest.LabelsEntryR\x06labels\x12O\n" +
 	"\fcapabilities\x18\x04 \x03(\v2+.agent.v1.RegisterRequest.CapabilitiesEntryR\fcapabilities\x1a9\n" +
@@ -427,9 +428,10 @@ const file_internal_pkg_agent_proto_agent_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +
 	"\x11CapabilitiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"o\n" +
-	"\x10RegisterResponse\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12 \n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"s\n" +
+	"\x10RegisterResponse\x12\x1d\n" +
+	"\n" +
+	"agent_name\x18\x01 \x01(\tR\tagentName\x12 \n" +
 	"\ftls_cert_pem\x18\x02 \x01(\tR\n" +
 	"tlsCertPem\x12\x1e\n" +
 	"\vtls_key_pem\x18\x03 \x01(\tR\ttlsKeyPem\"m\n" +
@@ -437,15 +439,16 @@ const file_internal_pkg_agent_proto_agent_proto_rawDesc = "" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12)\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x15.agent.v1.CommandTypeR\x04type\x12\x18\n" +
-	"\apayload\x18\x03 \x01(\fR\apayload\"\xb0\x01\n" +
+	"\apayload\x18\x03 \x01(\fR\apayload\"\xb4\x01\n" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x12\n" +
 	"\x04data\x18\x03 \x01(\fR\x04data\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12!\n" +
-	"\fis_heartbeat\x18\x05 \x01(\bR\visHeartbeat\x12\x19\n" +
-	"\bagent_id\x18\x06 \x01(\tR\aagentId*\x9b\x06\n" +
+	"\fis_heartbeat\x18\x05 \x01(\bR\visHeartbeat\x12\x1d\n" +
+	"\n" +
+	"agent_name\x18\x06 \x01(\tR\tagentName*\x9b\x06\n" +
 	"\vCommandType\x12\x1c\n" +
 	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18COMMAND_TYPE_LIST_IMAGES\x10\x01\x12\x1b\n" +

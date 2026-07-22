@@ -9,19 +9,18 @@ func AgentCmd() *cobra.Command {
 		Use:   "agent",
 		Short: "Manage the AI Services worker agent daemon",
 		Long: `The agent daemon runs on Worker LPARs and connects to the control-plane
-AgentGateway over a bidirectional gRPC CommandStream. It executes Podman
-runtime commands on behalf of the control plane.
+AgentGateway over a bidirectional gRPC CommandStream. It executes runtime
+commands on behalf of the control plane.
 
 Typical workflow on a Worker LPAR:
 
   1. ai-services bootstrap configure --runtime podman
      Install Podman, configure Spyre cards, ulimits, SELinux, SMT.
 
-  2. Write /etc/ai-services/agent.conf
-     Obtain a pre_shared_token via:
-       ai-services catalog agent issue-token <agent-id>   (on control plane)
+  2. Obtain a bootstrap token (on the control plane):
+       ai-services catalog agent issue-token
 
-  3. ai-services agent start
+  3. ai-services agent start --server <host:port> --name <name> --token <token>
      Register with the control plane and start the persistent CommandStream.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
