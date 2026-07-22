@@ -97,19 +97,24 @@ func runAPIServer(port int, accessTTL, refreshTTL time.Duration, adminUser, admi
 	componentRepo := repository.NewComponentRepository(pool)
 	serviceDependencyRepo := repository.NewServiceDependencyRepository(pool)
 
-	// Initialize sync service for background DB-Pod synchronization
-	syncService, err := sync.NewSyncService(
-		applicationRepo,
-		serviceRepo,
-		componentRepo,
-		serviceDependencyRepo,
-		sync.DefaultSyncInterval,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize sync service: %w", err)
+	// Initialize sync service for background DB-Pod synchronization.
+	// Sync is disabled when the AgentGateway is enabled because pods live on
+	// remote worker LPARs — the control-plane Podman socket cannot reach them,
+	// so polling would mark every remote-deployed application as Error.
+	if agentGatewayPort == 0 {
+		syncService, err := sync.NewSyncService(
+			applicationRepo,
+			serviceRepo,
+			componentRepo,
+			serviceDependencyRepo,
+			sync.DefaultSyncInterval,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to initialize sync service: %w", err)
+		}
+		syncService.Start(ctx)
+		defer syncService.Stop(ctx)
 	}
-	syncService.Start(ctx)
-	defer syncService.Stop(ctx)
 
 	catalogProvider, err := catalog.NewCatalogProvider()
 	if err != nil {
