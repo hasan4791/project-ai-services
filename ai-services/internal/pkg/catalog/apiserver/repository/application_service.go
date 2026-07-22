@@ -39,6 +39,7 @@ type ApplicationService struct {
 	deploymentExecutor    *deployment.DeploymentExecutor
 	deletionService       *deletion.DeletionService
 	validator             *validators.ApplicationValidator
+	agentDispatcher       *dispatcher.AgentDispatcher // nil when AgentGateway is disabled
 }
 
 // ValidationError represents a validation error with HTTP status code.
@@ -63,6 +64,7 @@ func NewApplicationService(
 		deploymentExecutor:    deployment.NewDeploymentExecutor(provider, appRepo, serviceRepo, componentRepo, agentDispatcher),
 		deletionService:       deletion.NewDeletionService(appRepo, serviceRepo, componentRepo, serviceDependencyRepo),
 		validator:             validators.NewApplicationValidator(provider),
+		agentDispatcher:       agentDispatcher,
 	}
 }
 
@@ -297,6 +299,13 @@ func (s *ApplicationService) CreateApplication(ctx context.Context, req apimodel
 		return nil, err
 	}
 
+	// Phase 2b: If an agent_selector is present, verify a READY agent exists now —
+	// before inserting any DB records — so the caller gets a synchronous 4xx
+	// instead of a 202 that silently transitions to Error status.
+	if err := s.validateAgentSelector(req); err != nil {
+		return nil, err
+	}
+
 	// Phase 3: Create deployment plan (synchronous - fail fast if invalid)
 	// For remote-podman the catalog paths are identical to podman; pass "podman" as the
 	// runtimeType so existing catalog asset directories are resolved correctly.
@@ -321,6 +330,28 @@ func (s *ApplicationService) CreateApplication(ctx context.Context, req apimodel
 	}
 
 	return response, nil
+}
+
+// validateAgentSelector verifies that the agent_selector in the request resolves
+// to a READY agent right now. Called synchronously so the caller gets a 4xx
+// instead of a 202 that silently transitions to Error status.
+func (s *ApplicationService) validateAgentSelector(req apimodels.CreateApplicationRequest) error {
+	if len(req.AgentSelector) == 0 {
+		return nil
+	}
+	if s.agentDispatcher == nil {
+		return &ValidationError{
+			Code:    http.StatusUnprocessableEntity,
+			Message: "agent_selector provided but AgentGateway is not enabled on this server",
+		}
+	}
+	if _, _, err := s.agentDispatcher.SelectAgent(req.AgentSelector); err != nil {
+		return &ValidationError{
+			Code:    http.StatusUnprocessableEntity,
+			Message: fmt.Sprintf("no available worker agent matching selector %v: %v", req.AgentSelector, err),
+		}
+	}
+	return nil
 }
 
 // executeDeploymentAsync executes the deployment in a background goroutine.
