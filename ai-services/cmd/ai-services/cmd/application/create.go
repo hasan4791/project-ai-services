@@ -46,6 +46,7 @@ var (
 	templateName string
 	rawArgParams []string
 	argParams    map[string]string
+	agentID      string // --agent-id flag: route deployment to a specific worker agent
 
 	// podman flags.
 	skipModelDownload     bool
@@ -196,6 +197,16 @@ func initCreateCommonFlags() {
 
 	createCmd.Flags().StringVarP(&templateName, appFlags.Create.Template, "t", "", "Application template to use (required)")
 	_ = createCmd.MarkFlagRequired(appFlags.Create.Template)
+
+	createCmd.Flags().StringVar(
+		&agentID,
+		"agent-id",
+		"",
+		"Deploy on a specific remote worker agent by agent ID.\n\n"+
+			"When set, the deployment is routed to the registered worker agent\n"+
+			"with this ID instead of the local Podman runtime.\n\n"+
+			"Example: --agent-id lpar-1\n",
+	)
 
 	createCmd.Flags().StringSliceVar(
 		&rawArgParams,
@@ -499,11 +510,23 @@ func buildCatalogPayload(appName string) (*apiModels.CreateApplicationRequest, e
 	}
 
 	// Build the payload
+	var payload *apiModels.CreateApplicationRequest
 	if isArchitecture {
-		return buildArchitecturePayload(provider, templateName, appName)
+		payload, err = buildArchitecturePayload(provider, templateName, appName)
+	} else {
+		payload, err = buildServicePayload(templateName, appName)
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	return buildServicePayload(templateName, appName)
+	// When --agent-id is provided, set agent_selector so the server routes the
+	// deployment to that specific worker agent.
+	if agentID != "" {
+		payload.AgentSelector = map[string]string{"agent_id": agentID}
+	}
+
+	return payload, nil
 }
 
 // pollApplicationStatus polls the application status until it's ready or fails.

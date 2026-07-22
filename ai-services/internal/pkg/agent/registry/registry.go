@@ -200,6 +200,8 @@ func (r *Registry) UpdateHeartbeat(ctx context.Context, agentID string) {
 }
 
 // SelectAgent picks the best available READY agent matching the label selector.
+// The reserved key "agent_id" matches directly against the agent's registered ID,
+// so callers can target a specific worker without requiring a custom label.
 func (r *Registry) SelectAgent(selector map[string]string) (*AgentEntry, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -211,12 +213,31 @@ func (r *Registry) SelectAgent(selector map[string]string) (*AgentEntry, error) 
 		if time.Since(entry.LastHeartbeat) > heartbeatTimeout {
 			continue
 		}
-		if labelsMatch(entry.Labels, selector) {
-			return entry, nil
+		if !agentMatches(entry, selector) {
+			continue
 		}
+		return entry, nil
 	}
 
 	return nil, fmt.Errorf("no available agent matching selector %v", selector)
+}
+
+// agentMatches reports whether entry satisfies every key in selector.
+// The key "agent_id" is matched against the agent's registered ID directly;
+// all other keys are matched against the agent's label map.
+func agentMatches(entry *AgentEntry, selector map[string]string) bool {
+	for k, v := range selector {
+		if k == "agent_id" {
+			if entry.AgentID != v {
+				return false
+			}
+		} else {
+			if entry.Labels[k] != v {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Get returns the in-memory entry for an agent.
@@ -316,14 +337,6 @@ func (r *Registry) updateStatus(ctx context.Context, agentID string, status Agen
 	}
 }
 
-func labelsMatch(agentLabels, selector map[string]string) bool {
-	for k, v := range selector {
-		if agentLabels[k] != v {
-			return false
-		}
-	}
-	return true
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // PostgreSQL persistence
