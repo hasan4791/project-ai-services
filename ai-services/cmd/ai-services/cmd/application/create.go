@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -467,10 +468,16 @@ func createApp(appName string) error {
 		var createErr error
 		resp, createErr = appClient.CreateApplication(payload)
 
+		// Do not retry client errors (4xx) — they are deterministic failures.
+		var httpErr *catalogClient.HTTPError
+		if errors.As(createErr, &httpErr) && httpErr.StatusCode >= 400 && httpErr.StatusCode < 500 {
+			return utils.NonRetryableError(createErr)
+		}
+
 		return createErr
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create application after %d retries: %w", vars.RetryCount, err)
+		return fmt.Errorf("failed to create application: %w", err)
 	}
 
 	logger.Infof("Application creation initiated (ID: %s)\n", resp.ID)

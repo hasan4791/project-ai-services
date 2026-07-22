@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,15 @@ import (
 
 // BackoffFunc type definition.
 type BackoffFunc func(currentDelay time.Duration) time.Duration
+
+// nonRetryableError wraps an error to signal Retry that it must not attempt again.
+type nonRetryableError struct{ cause error }
+
+func (e *nonRetryableError) Error() string { return e.cause.Error() }
+func (e *nonRetryableError) Unwrap() error { return e.cause }
+
+// NonRetryableError wraps err so that Retry stops immediately without further attempts.
+func NonRetryableError(err error) error { return &nonRetryableError{cause: err} }
 
 // Retry -> retries based on the retry attempts and initialDelay time set on failure.
 // Does exponentialBackOff based on the provided BackoffFunc.
@@ -29,12 +39,22 @@ func Retry(
 	if err == nil {
 		return nil
 	}
+	// Bail immediately on non-retryable errors.
+	var nre *nonRetryableError
+	if errors.As(err, &nre) {
+		return nre.Unwrap()
+	}
 
 	for i := range attempts {
 		logger.DebugfCtx(ctx, "\n[Retry] Attempt %d/%d...\n", i+1, attempts)
 
 		if err = fn(); err == nil {
 			return nil
+		}
+
+		// Bail immediately on non-retryable errors.
+		if errors.As(err, &nre) {
+			return nre.Unwrap()
 		}
 
 		// At Last attempt — stop

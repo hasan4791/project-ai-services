@@ -204,8 +204,10 @@ func (c *ApplicationClient) CreateApplication(req *models.CreateApplicationReque
 	}
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("create application: server returned HTTP %d: %s",
-			resp.StatusCode(), utils.ParseErrorResponse(resp))
+		return nil, &HTTPError{
+			StatusCode: resp.StatusCode(),
+			Message:    fmt.Sprintf("create application: server returned HTTP %d: %s", resp.StatusCode(), utils.ParseErrorResponse(resp)),
+		}
 	}
 
 	return &result, nil
