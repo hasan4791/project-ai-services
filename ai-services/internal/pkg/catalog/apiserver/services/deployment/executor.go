@@ -50,7 +50,8 @@ func NewDeploymentExecutor(
 
 // ExecuteWithPlan executes deployment using an existing plan.
 // It resolves the correct runtime from the plan (local Podman or a remote agent),
-// then asks the runtime itself what type it is to select the right deployer.
+// queries it for free Spyre cards on the target LPAR, allocates them into the plan,
+// then routes to the correct deployer based on rt.Type().
 // This is used when the plan has already been created and database records inserted.
 func (e *DeploymentExecutor) ExecuteWithPlan(
 	ctx context.Context,
@@ -59,6 +60,13 @@ func (e *DeploymentExecutor) ExecuteWithPlan(
 ) error {
 	rt, err := e.resolveRuntime(plan)
 	if err != nil {
+		return err
+	}
+
+	// Discover and allocate Spyre cards from the target LPAR.
+	// For local Podman this queries the control plane; for a remote agent it
+	// goes over gRPC to the worker, so the correct cards are always found.
+	if err := e.allocateSpyreCards(ctx, rt, plan); err != nil {
 		return err
 	}
 
@@ -73,6 +81,38 @@ func (e *DeploymentExecutor) ExecuteWithPlan(
 	default:
 		return fmt.Errorf("unsupported runtime type: %s", rt.Type())
 	}
+}
+
+// allocateSpyreCards queries rt for free Spyre cards on the target LPAR and
+// populates plan.SpyreCardPool. It is a no-op when no cards are required.
+// For a remote agent the query goes over gRPC, so the worker's cards are returned.
+func (e *DeploymentExecutor) allocateSpyreCards(ctx context.Context, rt runtime.Runtime, plan *DeploymentPlan) error {
+	if plan.SpyreCardsRequired == 0 {
+		return nil
+	}
+
+	sysInfo, err := rt.GetSystemInfo()
+	if err != nil {
+		return fmt.Errorf("failed to query system info for Spyre card discovery: %w", err)
+	}
+
+	var freeAddresses []string
+	if info, ok := sysInfo.Accelerators["ibm.com/spyre_pf"]; ok {
+		if len(info.FreeAddresses) > 0 {
+			// PCI addresses are available directly — use them.
+			freeAddresses = info.FreeAddresses
+		} else {
+			// Older runtime or remote runtime that returns only counts:
+			// synthesise positional placeholders so AllocateSpyreCards can
+			// validate the count. The Podman socket on the target LPAR
+			// resolves the actual PCI paths at pod-creation time.
+			for i := 0; i < info.Available; i++ {
+				freeAddresses = append(freeAddresses, fmt.Sprintf("spyre-%d", i))
+			}
+		}
+	}
+
+	return plan.AllocateSpyreCards(ctx, freeAddresses)
 }
 
 // resolveRuntime returns the correct runtime for the plan.

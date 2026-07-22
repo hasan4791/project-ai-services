@@ -21,8 +21,9 @@ type MemoryInfo struct {
 
 // AcceleratorInfo represents accelerator availability information.
 type AcceleratorInfo struct {
-	Total     int `json:"total"`
-	Available int `json:"available"`
+	Total          int      `json:"total"`
+	Available      int      `json:"available"`
+	FreeAddresses  []string `json:"free_addresses,omitempty"` // PCI addresses of free cards (populated when available)
 }
 
 // Made with Bob

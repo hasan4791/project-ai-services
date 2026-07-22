@@ -503,11 +503,10 @@ func getAcceleratorInfo(ctx context.Context) map[string]*models.AcceleratorInfo 
 		return accelerators
 	}
 
-	availableCount := len(availableCards)
-
 	accelerators["ibm.com/spyre_pf"] = &models.AcceleratorInfo{
-		Total:     totalCount,
-		Available: availableCount,
+		Total:         totalCount,
+		Available:     len(availableCards),
+		FreeAddresses: availableCards,
 	}
 
 	return accelerators

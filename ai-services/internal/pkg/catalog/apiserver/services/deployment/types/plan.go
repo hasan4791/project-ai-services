@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -9,15 +10,30 @@ import (
 
 // DeploymentPlan represents the complete deployment plan for an application.
 type DeploymentPlan struct {
-	ApplicationID   uuid.UUID                 // Generated application ID
-	ApplicationName string                    // Application name
-	CatalogID       string                    // Architecture or service catalog ID
-	Version         string                    // Application version from request
-	IsArchitecture  bool                      // true for architecture, false for standalone service
-	Components      map[string]*ComponentPlan // Key: component hash, Value: component plan
-	Services        map[string]*ServicePlan   // Key: service ID, Value: service plan
-	SpyreCardPool   *SpyreCardPool            // Allocated Spyre card pool (set after allocation)
-	AgentSelector   map[string]string         // Label selector for remote-podman agent (nil = any)
+	ApplicationID      uuid.UUID                 // Generated application ID
+	ApplicationName    string                    // Application name
+	CatalogID          string                    // Architecture or service catalog ID
+	Version            string                    // Application version from request
+	IsArchitecture     bool                      // true for architecture, false for standalone service
+	Components         map[string]*ComponentPlan // Key: component hash, Value: component plan
+	Services           map[string]*ServicePlan   // Key: service ID, Value: service plan
+	SpyreCardsRequired int                       // Total cards required (set by planner)
+	SpyreCardPool      *SpyreCardPool            // Allocated PCI addresses (set by executor after querying runtime)
+	AgentSelector      map[string]string         // Label selector for remote-podman agent (nil = any)
+}
+
+// AllocateSpyreCards populates SpyreCardPool from the provided free PCI addresses.
+// Returns an error if fewer addresses are available than SpyreCardsRequired.
+func (p *DeploymentPlan) AllocateSpyreCards(ctx context.Context, freeAddresses []string) error {
+	if p.SpyreCardsRequired == 0 {
+		return nil
+	}
+	if len(freeAddresses) < p.SpyreCardsRequired {
+		return fmt.Errorf("insufficient Spyre cards on target LPAR: required %d, available %d",
+			p.SpyreCardsRequired, len(freeAddresses))
+	}
+	p.SpyreCardPool = &SpyreCardPool{Addresses: freeAddresses}
+	return nil
 }
 
 // ComponentPlan represents a single component deployment.
