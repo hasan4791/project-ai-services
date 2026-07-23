@@ -1,7 +1,12 @@
-// Package configure implements `ai-services agent configure`.
-// It deploys the worker-side Caddy pod and generates the Caddyfile.
-// The Caddy admin URL is always derived at runtime by inspecting the running
-// pod — it is never stored in config or asked from the user.
+// Package configure implements the one-time Worker-side setup that deploys the
+// agent Caddy pod.  It mirrors the pattern used by catalog configure:
+//
+//  1. Write the base Caddyfile to <baseDir>/agent/caddy/Caddyfile
+//  2. Render agent-caddy.yaml.tmpl with the Caddy image and base dir
+//  3. Deploy (or skip if already running) via clipodman.DeployPodAndReadinessCheck
+//
+// This is intentionally separate from `agent start` so that the daemon loop
+// can be restarted freely without re-deploying infrastructure.
 package configure
 
 import (
@@ -18,160 +23,192 @@ import (
 	"github.com/project-ai-services/ai-services/internal/pkg/logger"
 	podmodels "github.com/project-ai-services/ai-services/internal/pkg/models"
 	"github.com/project-ai-services/ai-services/internal/pkg/proxy"
-	podmanRuntime "github.com/project-ai-services/ai-services/internal/pkg/runtime/podman"
-	"github.com/project-ai-services/ai-services/internal/pkg/runtime/types"
+	"github.com/project-ai-services/ai-services/internal/pkg/runtime/podman"
 	"github.com/project-ai-services/ai-services/internal/pkg/specs"
 	k8syaml "sigs.k8s.io/yaml"
 )
 
 const (
 	// AgentCaddyPodName is the fixed name of the worker Caddy pod.
-	// Exported so that `agent start` can inspect it to construct the admin URL.
+	// Exported so that `agent start` can use it.
 	AgentCaddyPodName = "ai-services--agent-caddy"
 
-	// caddyImageDefault is the default Caddy image, mirroring the catalog value.
-	caddyImageDefault = "icr.io/ai-services-cicd/caddy:v2.11.4-0"
+	agentCaddyfileSubDir = "agent/caddy"
+	agentCaddyTmplName   = "agent/podman/templates/agent-caddy.yaml.tmpl"
+	agentCaddyfileTmpl   = "agent/podman/templates/agent-caddyfile.tmpl"
 
 	dirPerm  = 0o755
 	filePerm = 0o644
 )
 
-// Options holds the configuration for the agent configure command.
+// Options holds the parameters for agent configure.
 type Options struct {
-	// BaseDir is the agent's data directory (mirrors catalog's BaseDir).
+	// BaseDir is the root data directory on the Worker, e.g. /var/lib/ai-services.
+	// Caddy data is written to <BaseDir>/agent/caddy/.
 	BaseDir string
-	// HTTPSPort is the port Caddy listens on for external HTTPS traffic.
+	// Runtime is the local container runtime ("podman" or "openshift").
+	// Defaults to "podman". Only podman is supported for worker Caddy deployment.
+	Runtime string
+	// HTTPSPort is the host port Caddy listens on for external HTTPS traffic.
+	// Defaults to 8443.
 	HTTPSPort int
-	// RuntimeType is the local container runtime (podman or openshift).
-	// Defaults to podman when empty.
-	RuntimeType types.RuntimeType
 }
 
-// Run deploys the worker Caddy pod and generates the Caddyfile.
-// The admin URL is constructed from the running pod at runtime — nothing is
-// stored in config or asked from the user.
-func Run(opts Options) error {
-	ctx := context.Background()
-
-	if opts.RuntimeType == "" {
-		opts.RuntimeType = types.RuntimeTypePodman
+// DeployAgentCaddy writes the Caddyfile and deploys the agent Caddy pod.
+// Any existing pod (stale, failed, or wrong config) is removed and redeployed
+// to ensure the correct port bindings are always in place.
+func DeployAgentCaddy(ctx context.Context, opts Options) error {
+	if opts.Runtime == "" {
+		opts.Runtime = "podman"
+	}
+	if opts.Runtime != "podman" {
+		return fmt.Errorf("agent configure: runtime %q not supported — only podman is supported for worker Caddy deployment", opts.Runtime)
 	}
 
-	// Only Podman is supported for the worker Caddy deployment.
-	if opts.RuntimeType != types.RuntimeTypePodman {
-		return fmt.Errorf("agent configure: runtime %q not supported — only podman is supported for worker Caddy deployment", opts.RuntimeType)
-	}
-
-	// Step 1: Generate Caddyfile on disk.
-	if err := generateCaddyfile(opts.BaseDir); err != nil {
-		return fmt.Errorf("agent configure: generate Caddyfile: %w", err)
-	}
-	logger.Infoln("Caddyfile generated.")
-
-	// Step 2: Render and deploy the Caddy pod template.
-	rt, err := podmanRuntime.NewPodmanClient()
+	rt, err := podman.NewPodmanClient()
 	if err != nil {
-		return fmt.Errorf("agent configure: init podman: %w", err)
+		return fmt.Errorf("agent configure: init podman client: %w", err)
 	}
 
-	// Check if already deployed.
-	if exists, _ := rt.PodExists(AgentCaddyPodName); exists {
-		logger.Infof("Worker Caddy pod '%s' already running — skipping deploy.\n", AgentCaddyPodName)
-	} else {
-		if err := deployCaddyPod(ctx, rt, opts); err != nil {
-			return fmt.Errorf("agent configure: deploy Caddy pod: %w", err)
+	// Resolve Caddy image from values.yaml.
+	caddyImage, err := defaultCaddyImage()
+	if err != nil {
+		return fmt.Errorf("agent configure: resolve caddy image: %w", err)
+	}
+
+	// Step 1 — write the Caddyfile to disk so the pod volume-mount picks it up.
+	if err := writeAgentCaddyfile(opts.BaseDir); err != nil {
+		return err
+	}
+
+	// Step 2 — remove any existing pod so we always deploy fresh with the
+	// correct 127.0.0.1:2019:2019 binding (handles stale/failed pods too).
+	exists, err := rt.PodExists(AgentCaddyPodName)
+	if err != nil {
+		return fmt.Errorf("agent configure: check pod existence: %w", err)
+	}
+	if exists {
+		logger.InfofCtx(ctx, "agent configure: %s exists — removing before redeploy\n", AgentCaddyPodName)
+		force := true
+		if err := rt.DeletePod(AgentCaddyPodName, &force); err != nil {
+			return fmt.Errorf("agent configure: remove existing pod: %w", err)
 		}
-		logger.Infof("Worker Caddy pod '%s' deployed.\n", AgentCaddyPodName)
 	}
 
-	// Step 3: Construct admin URL from the running pod and verify Caddy is healthy.
-	adminURL, err := BuildAdminURL(rt)
-	if err != nil {
-		return fmt.Errorf("agent configure: resolve Caddy admin URL: %w", err)
+	// Step 3 — render pod template and deploy.
+	httpsPort := opts.HTTPSPort
+	if httpsPort == 0 {
+		httpsPort = 8443
+	}
+	if err := deployAgentCaddyPod(ctx, rt, opts.BaseDir, caddyImage, httpsPort); err != nil {
+		return err
 	}
 
+	// Step 4 — verify Caddy admin API is reachable.
+	adminURL, _ := BuildAdminURL()
 	pm := proxy.NewCaddyManager(adminURL, constants.CaddyServerName)
 	if err := pm.HealthCheck(); err != nil {
 		return fmt.Errorf("agent configure: Caddy health check failed: %w", err)
 	}
 
-	logger.Infof("\nWorker Caddy configured successfully.\n")
-	logger.Infof("  Admin URL : %s\n", adminURL)
-	logger.Infof("  HTTPS Port: %d\n", opts.HTTPSPort)
-	logger.Infoln("\nRun 'ai-services agent start' to connect to the control plane.")
-
+	logger.InfofCtx(ctx, "agent configure: Worker Caddy ready — admin %s, HTTPS :%d\n", adminURL, httpsPort)
+	logger.Infoln("Run 'ai-services agent start' to connect to the control plane.")
 	return nil
 }
 
-// generateCaddyfile writes the Caddyfile template to BaseDir/common/caddy/Caddyfile.
-func generateCaddyfile(baseDir string) error {
-	raw, err := assets.AgentFS.ReadFile("agent/podman/Caddyfile.tmpl")
+// writeAgentCaddyfile renders the static Caddyfile template and writes it to
+// <baseDir>/agent/caddy/Caddyfile, creating directories as needed.
+func writeAgentCaddyfile(baseDir string) error {
+	raw, err := assets.AgentFS.ReadFile(agentCaddyfileTmpl)
 	if err != nil {
-		return fmt.Errorf("read Caddyfile template: %w", err)
+		return fmt.Errorf("agent configure: read caddyfile template: %w", err)
 	}
 
-	tmpl, err := template.New("Caddyfile").Parse(string(raw))
-	if err != nil {
-		return fmt.Errorf("parse Caddyfile template: %w", err)
-	}
-
-	data := map[string]any{
-		"CaddyServerName": constants.CaddyServerName,
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return fmt.Errorf("render Caddyfile: %w", err)
-	}
-
-	caddyDir := filepath.Join(baseDir, "common", "caddy")
+	// The agent-caddyfile.tmpl has no template variables — write it verbatim.
+	caddyDir := filepath.Join(baseDir, agentCaddyfileSubDir)
 	if err := os.MkdirAll(caddyDir, dirPerm); err != nil {
-		return fmt.Errorf("create caddy dir: %w", err)
+		return fmt.Errorf("agent configure: create caddy dir %s: %w", caddyDir, err)
 	}
 
-	return os.WriteFile(filepath.Join(caddyDir, "Caddyfile"), buf.Bytes(), filePerm)
+	caddyfilePath := filepath.Join(caddyDir, "Caddyfile")
+	if err := os.WriteFile(caddyfilePath, raw, filePerm); err != nil {
+		return fmt.Errorf("agent configure: write Caddyfile to %s: %w", caddyfilePath, err)
+	}
+
+	logger.Infof("agent configure: Caddyfile written to %s\n", caddyfilePath)
+	return nil
 }
 
-// deployCaddyPod renders caddy.yaml.tmpl and deploys the pod.
-func deployCaddyPod(ctx context.Context, rt *podmanRuntime.PodmanClient, opts Options) error {
-	raw, err := assets.AgentFS.ReadFile("agent/podman/caddy.yaml.tmpl")
+// deployAgentCaddyPod renders the pod template and calls DeployPodAndReadinessCheck.
+func deployAgentCaddyPod(ctx context.Context, rt *podman.PodmanClient, baseDir, caddyImage string, httpsPort int) error {
+	raw, err := assets.AgentFS.ReadFile(agentCaddyTmplName)
 	if err != nil {
-		return fmt.Errorf("read caddy pod template: %w", err)
+		return fmt.Errorf("agent configure: read pod template: %w", err)
 	}
 
-	tmpl, err := template.New("caddy-pod").Parse(string(raw))
+	tmpl, err := template.New("agent-caddy.yaml.tmpl").Parse(string(raw))
 	if err != nil {
-		return fmt.Errorf("parse caddy pod template: %w", err)
+		return fmt.Errorf("agent configure: parse pod template: %w", err)
 	}
 
-	data := map[string]any{
-		"PodName":    AgentCaddyPodName,
-		"BaseDir":    opts.BaseDir,
-		"HTTPSPort":  opts.HTTPSPort,
-		"CaddyImage": caddyImageDefault,
+	params := map[string]any{
+		"BaseDir":   baseDir,
+		"HTTPSPort": httpsPort,
+		"Values": map[string]any{
+			"caddy": map[string]any{
+				"image": caddyImage,
+			},
+		},
 	}
 
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return fmt.Errorf("render caddy pod template: %w", err)
+	var rendered bytes.Buffer
+	if err := tmpl.Execute(&rendered, params); err != nil {
+		return fmt.Errorf("agent configure: render pod template: %w", err)
 	}
 
-	// Parse the rendered YAML to get the PodSpec for readiness checks.
+	// Unmarshal the rendered YAML into PodSpec for readiness checks and deploy opts.
 	var podSpec podmodels.PodSpec
-	if err := k8syaml.Unmarshal(buf.Bytes(), &podSpec); err != nil {
-		return fmt.Errorf("parse caddy pod spec: %w", err)
+	if err := k8syaml.Unmarshal(rendered.Bytes(), &podSpec); err != nil {
+		return fmt.Errorf("agent configure: parse rendered pod yaml: %w", err)
 	}
 
-	reader := bytes.NewReader(buf.Bytes())
-	podDeployOptions := clipodman.ConstructPodDeployOptions(specs.FetchPodAnnotations(podSpec))
+	deployOpts := clipodman.ConstructPodDeployOptions(specs.FetchPodAnnotations(podSpec))
 
-	return clipodman.DeployPodAndReadinessCheck(ctx, rt, &podSpec, "caddy.yaml.tmpl", reader, podDeployOptions)
+	logger.InfofCtx(ctx, "agent configure: deploying %s\n", AgentCaddyPodName)
+	if err := clipodman.DeployPodAndReadinessCheck(ctx, rt, &podSpec, "agent-caddy.yaml.tmpl",
+		bytes.NewReader(rendered.Bytes()), deployOpts); err != nil {
+		return fmt.Errorf("agent configure: deploy caddy pod: %w", err)
+	}
+
+	logger.InfofCtx(ctx, "agent configure: %s is ready — Worker Caddy listening on :8443\n", AgentCaddyPodName)
+	return nil
+}
+
+// defaultCaddyImage reads the Caddy image default from assets/agent/podman/values.yaml.
+func defaultCaddyImage() (string, error) {
+	raw, err := assets.AgentFS.ReadFile("agent/podman/values.yaml")
+	if err != nil {
+		return "", fmt.Errorf("read agent values.yaml: %w", err)
+	}
+
+	var vals struct {
+		Caddy struct {
+			Image string `yaml:"image"`
+		} `yaml:"caddy"`
+	}
+	if err := k8syaml.Unmarshal(raw, &vals); err != nil {
+		return "", fmt.Errorf("parse agent values.yaml: %w", err)
+	}
+	if vals.Caddy.Image == "" {
+		return "", fmt.Errorf("caddy.image not set in agent/podman/values.yaml")
+	}
+	return vals.Caddy.Image, nil
 }
 
 // BuildAdminURL returns the fixed Caddy admin URL for the worker pod.
 // The admin port is always published as 127.0.0.1:2019:2019 — bound to the
 // host loopback only, so it is unreachable from outside the Worker LPAR.
 // No pod inspection needed: the URL is always http://localhost:2019.
-func BuildAdminURL(_ *podmanRuntime.PodmanClient) (string, error) {
+func BuildAdminURL() (string, error) {
 	return "http://localhost:2019", nil
 }

@@ -1,0 +1,29 @@
+{
+	# Admin API bound to all interfaces inside the container so that the host-side
+	# port binding (127.0.0.1:2019:2019) can forward requests to it.
+	# Access is restricted at the host level: the port is only published on the
+	# host loopback (127.0.0.1), so it remains unreachable from outside the LPAR.
+	admin 0.0.0.0:2019
+
+	servers :443 {
+		name worker
+	}
+}
+
+:443 {
+	# Seed the routes array so it is never empty at startup.
+	handle /internal/health {
+		# @id internal-health
+		respond "OK" 200
+	}
+
+	tls internal
+}
+
+# Internal health check endpoint used by the liveness probe (plain HTTP).
+:8080 {
+	respond /health "OK" 200
+}
+
+# Routes for deployed service pods are registered dynamically by the agent daemon
+# via the Caddy Admin API after each successful pod deployment.
