@@ -39,6 +39,10 @@ Run this once after 'ai-services bootstrap configure', before 'agent start'.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 
+			if runtimeName == "" {
+				return fmt.Errorf("--runtime is required (podman or openshift)")
+			}
+
 			var (
 				resolvedDir string
 				err         error
@@ -63,7 +67,7 @@ Run this once after 'ai-services bootstrap configure', before 'agent start'.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&runtimeName, "runtime", "r", "podman", "Local container runtime (podman or openshift)")
+	cmd.Flags().StringVarP(&runtimeName, "runtime", "r", "", "Local container runtime: podman or openshift (required)")
 	cmd.Flags().StringVar(&baseDir, "base-dir", "", fmt.Sprintf("Root data directory on this Worker LPAR (default: %s)", constants.DefaultBaseDir))
 	cmd.Flags().IntVar(&httpsPort, "https-port", 443, "Host port Caddy listens on for external HTTPS traffic")
 

@@ -13,7 +13,8 @@ const (
 	DSCIKind             = "DSCInitialization"
 	SMTLevel             = 2
 	ErrSecretNotFound    = "no secret with name or id"
-	CaddyServerName      = "ai_services" // Caddy server name used for route registration
+	CaddyServerName      = "ai_services"       // Caddy server name used for route registration (control-plane)
+	AgentCaddyServerName = "ai_services_agent" // Caddy server name on the worker LPAR agent pod
 )
 
 const (

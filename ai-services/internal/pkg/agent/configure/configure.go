@@ -106,7 +106,7 @@ func DeployAgentCaddy(ctx context.Context, opts Options) error {
 
 	// Step 4 — verify Caddy admin API is reachable.
 	adminURL, _ := BuildAdminURL()
-	pm := proxy.NewCaddyManager(adminURL, constants.CaddyServerName)
+	pm := proxy.NewCaddyManager(adminURL, constants.AgentCaddyServerName)
 	if err := pm.HealthCheck(); err != nil {
 		return fmt.Errorf("agent configure: Caddy health check failed: %w", err)
 	}

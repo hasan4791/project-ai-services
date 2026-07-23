@@ -50,6 +50,9 @@ Run as a systemd service for production use.`,
   ai-services agent start --server lpar-0.example.com:9090 --name lpar-1 --token <token> --runtime openshift`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
+			if runtimeName == "" {
+				return fmt.Errorf("--runtime is required (podman or openshift)")
+			}
 			if server == "" {
 				return fmt.Errorf("--server is required (e.g. lpar-0.example.com:9090)")
 			}
@@ -66,7 +69,7 @@ Run as a systemd service for production use.`,
 	cmd.Flags().StringVar(&server, "server", "", "Control-plane AgentGateway address (host:port)")
 	cmd.Flags().StringVar(&agentName, "name", "", "Name to register this agent under")
 	cmd.Flags().StringVar(&token, "token", "", "Single-use bootstrap token (from: ai-services catalog agent issue-token)")
-	cmd.Flags().StringVar(&runtimeName, "runtime", "podman", "Local runtime to use: podman or openshift")
+	cmd.Flags().StringVar(&runtimeName, "runtime", "", "Local runtime to use: podman or openshift (required)")
 	cmd.Flags().StringVar(&tlsDir, "tls-dir", tlsDir, "Directory to write TLS material (future mTLS)")
 
 	return cmd
@@ -132,7 +135,7 @@ func injectCaddyManager(pc *podmanRuntime.PodmanClient) {
 		return
 	}
 
-	pm := proxy.NewCaddyManager(adminURL, constants.CaddyServerName)
+	pm := proxy.NewCaddyManager(adminURL, constants.AgentCaddyServerName)
 	caddyMgr := proxy.NewLocalCaddyManagerAdapter(pm)
 	pc.SetCaddyManager(caddyMgr)
 	logger.Infof("Agent: worker Caddy configured at %s\n", adminURL)
