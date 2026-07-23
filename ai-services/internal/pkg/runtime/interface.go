@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"io"
 
 	"github.com/project-ai-services/ai-services/internal/pkg/models"
@@ -53,6 +54,24 @@ type Runtime interface {
 	// For a remote agent this is dispatched over gRPC so the container
 	// runs on the worker LPAR, not the control plane.
 	RunEphemeralContainer(image string, cmd []string, mounts []types.BindMount) (int32, error)
+
+	// Proxy operations – Caddy management on the node.
+	// RegisterProxyRoute registers a route with the local Caddy instance.
+	RegisterProxyRoute(ctx context.Context, route types.ProxyRoute) error
+	// UnregisterProxyRoute removes a route from the local Caddy instance.
+	UnregisterProxyRoute(routeID string) error
+	// GetProxyRoute retrieves a route by ID from the local Caddy instance.
+	GetProxyRoute(routeID string) (*types.ProxyRoute, error)
+	// ProxyHealthCheck verifies the local Caddy instance is reachable.
+	ProxyHealthCheck() error
+
+	// HTTPProxy tunnels an HTTP request through the gRPC stream to a worker
+	// pod endpoint and returns the response.
+	// method is the HTTP verb (GET, POST, …), targetURL is the full URL of the
+	// pod endpoint on the worker (e.g. "http://pod-name:8080/health"),
+	// headers are optional extra request headers, and body is the request body
+	// (may be nil).  Returns the HTTP status code, response headers, and body.
+	HTTPProxy(ctx context.Context, method, targetURL string, headers map[string]string, body []byte) (*types.HTTPProxyResponse, error)
 
 	// Runtime type identification
 	Type() types.RuntimeType

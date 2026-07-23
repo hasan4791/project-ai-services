@@ -10,3 +10,6 @@ var BootstrapFS embed.FS
 
 //go:embed catalog architectures services components
 var CatalogFS embed.FS
+
+//go:embed agent
+var AgentFS embed.FS

@@ -1132,7 +1132,7 @@ func (d *PodmanDeployer) getEnvParamsForComponent(ctx context.Context, podSpec *
 func (d *PodmanDeployer) registerApplicationRoutes(ctx context.Context, plan *DeploymentPlan) error {
 	logger.InfofCtx(ctx, "Registering routes for application '%s'\n", plan.ApplicationName)
 
-	domainSuffix, httpsPort, proxyManager, err := d.getCaddyConfiguration()
+	domainSuffix, httpsPort, proxyManager, err := d.getCaddyConfiguration(ctx)
 	if err != nil {
 		return err
 	}
@@ -1158,8 +1158,16 @@ func (d *PodmanDeployer) registerApplicationRoutes(ctx context.Context, plan *De
 	return nil
 }
 
-// getCaddyConfiguration retrieves Caddy configuration and creates a ProxyManager.
-func (d *PodmanDeployer) getCaddyConfiguration() (string, string, proxy.ProxyManager, error) {
+// getCaddyConfiguration retrieves Caddy configuration and a ProxyManager.
+//
+// For local Podman deployments the ProxyManager connects to the control plane's
+// own Caddy instance via CADDY_ADMIN_URL (existing behaviour).
+//
+// For remote-agent deployments, the ProxyManager wraps the runtime's
+// proxy methods so that route registration commands are sent over the gRPC
+// stream directly to the worker's Caddy instance — no CADDY_ADMIN_URL needed
+// on the control plane for remote workers.
+func (d *PodmanDeployer) getCaddyConfiguration(ctx context.Context) (string, string, proxy.ProxyManager, error) {
 	// Get domain suffix from env var (set during catalog configure)
 	// This is pre-computed: certDomain OR customDomain OR hostIP.nip.io
 	domainSuffix := utils.GetEnv("DOMAIN_SUFFIX", "")
@@ -1169,13 +1177,19 @@ func (d *PodmanDeployer) getCaddyConfiguration() (string, string, proxy.ProxyMan
 
 	httpsPort := utils.GetEnv("CADDY_HTTPS_PORT", catalogconstants.DefaultHTTPSPort)
 
-	// Get Caddy proxy manager - fails if CADDY_ADMIN_URL not set
-	proxyManager, err := proxy.GetCaddyProxyManager()
-	if err != nil {
-		return "", "", nil, err
+	rt := d.runtime
+	switch rt.Type() {
+	case runtimetypes.RuntimeTypeRemotePodman, runtimetypes.RuntimeTypeRemoteOpenShift:
+		// use the worker's own Caddy via the gRPC stream.
+		return domainSuffix, httpsPort, proxy.NewRuntimeProxyManager(ctx, rt), nil
+	default:
+		// Local Podman: use the control-plane Caddy via CADDY_ADMIN_URL.
+		proxyManager, err := proxy.GetCaddyProxyManager()
+		if err != nil {
+			return "", "", nil, err
+		}
+		return domainSuffix, httpsPort, proxyManager, nil
 	}
-
-	return domainSuffix, httpsPort, proxyManager, nil
 }
 
 // registerServiceRoutes registers routes for a single service and updates its endpoints in the database.

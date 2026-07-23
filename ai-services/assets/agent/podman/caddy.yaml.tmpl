@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ .PodName }}"
+  labels:
+    ai-services.io/component: "proxy"
+    ai-services.io/role: "agent-caddy"
+  annotations:
+    # Admin API is bound to the host loopback only — unreachable from outside
+    # the Worker LPAR. HTTPS is published on {{ .HTTPSPort }} for external traffic.
+    ai-services.io/ports: "127.0.0.1:2019:2019, {{ .HTTPSPort }}:443"
+spec:
+  restartPolicy: always
+  containers:
+    - name: caddy
+      image: "{{ .CaddyImage }}"
+      imagePullPolicy: IfNotPresent
+      args: ["caddy", "run", "--config", "/data/caddy/Caddyfile", "--resume"]
+      env:
+        - name: CADDY_ADMIN
+          # Bind to all interfaces inside the container so the host-side
+          # 127.0.0.1:2019:2019 port mapping can reach it.
+          value: "0.0.0.0:2019"
+      volumeMounts:
+        - name: caddy-data
+          mountPath: /data/caddy:z
+        - name: caddy-config
+          mountPath: /config:z
+      resources:
+        requests:
+          memory: "512Mi"
+        limits:
+          memory: "512Mi"
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+          scheme: HTTP
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 3
+  volumes:
+    - name: caddy-data
+      hostPath:
+        path: {{ .BaseDir }}/common/caddy
+        type: DirectoryOrCreate
+    - name: caddy-config
+      hostPath:
+        path: {{ .BaseDir }}/common/caddy-config
+        type: DirectoryOrCreate

@@ -476,3 +476,32 @@ func (kc *OpenshiftClient) GetPodResources(nameOrID string) (*types.PodResources
 func (kc *OpenshiftClient) RunEphemeralContainer(_ string, _ []string, _ []types.BindMount) (int32, error) {
 	return -1, fmt.Errorf("RunEphemeralContainer not implemented for OpenShift runtime")
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Proxy operations – not implemented for OpenShift
+// ──────────────────────────────────────────────────────────────────────────────
+
+// RegisterProxyRoute is not implemented for OpenShift.
+func (kc *OpenshiftClient) RegisterProxyRoute(_ context.Context, _ types.ProxyRoute) error {
+	return fmt.Errorf("RegisterProxyRoute not implemented for OpenShift runtime")
+}
+
+// UnregisterProxyRoute is not implemented for OpenShift.
+func (kc *OpenshiftClient) UnregisterProxyRoute(_ string) error {
+	return fmt.Errorf("UnregisterProxyRoute not implemented for OpenShift runtime")
+}
+
+// GetProxyRoute is not implemented for OpenShift.
+func (kc *OpenshiftClient) GetProxyRoute(_ string) (*types.ProxyRoute, error) {
+	return nil, fmt.Errorf("GetProxyRoute not implemented for OpenShift runtime")
+}
+
+// ProxyHealthCheck is not implemented for OpenShift.
+func (kc *OpenshiftClient) ProxyHealthCheck() error {
+	return fmt.Errorf("ProxyHealthCheck not implemented for OpenShift runtime")
+}
+
+// HTTPProxy is not implemented for OpenShift.
+func (kc *OpenshiftClient) HTTPProxy(_ context.Context, _, _ string, _ map[string]string, _ []byte) (*types.HTTPProxyResponse, error) {
+	return nil, fmt.Errorf("HTTPProxy not implemented for OpenShift runtime")
+}

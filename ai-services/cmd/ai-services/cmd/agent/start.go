@@ -11,8 +11,11 @@ import (
 
 	"github.com/project-ai-services/ai-services/internal/pkg/agent/agentbootstrap"
 	"github.com/project-ai-services/ai-services/internal/pkg/agent/agentconfig"
+	"github.com/project-ai-services/ai-services/internal/pkg/agent/configure"
 	"github.com/project-ai-services/ai-services/internal/pkg/agent/daemon"
+	"github.com/project-ai-services/ai-services/internal/pkg/constants"
 	"github.com/project-ai-services/ai-services/internal/pkg/logger"
+	"github.com/project-ai-services/ai-services/internal/pkg/proxy"
 	"github.com/project-ai-services/ai-services/internal/pkg/runtime"
 	openshiftRuntime "github.com/project-ai-services/ai-services/internal/pkg/runtime/openshift"
 	podmanRuntime "github.com/project-ai-services/ai-services/internal/pkg/runtime/podman"
@@ -20,11 +23,11 @@ import (
 
 func newStartCmd() *cobra.Command {
 	var (
-		server       string
-		agentName    string
-		token        string
-		runtimeName  string
-		tlsDir       = agentbootstrap.DefaultAgentTLSDir
+		server      string
+		agentName   string
+		token       string
+		runtimeName string
+		tlsDir      = agentbootstrap.DefaultAgentTLSDir
 	)
 
 	cmd := &cobra.Command{
@@ -97,6 +100,14 @@ func runStart(server, agentName, token, runtimeName, tlsDir string) error {
 		return fmt.Errorf("agent start: %w", err)
 	}
 
+	// Inject the local Caddy manager into the Podman runtime.
+	// Source priority: saved agent config (caddy_admin_url) > CADDY_ADMIN_URL env var.
+	// If neither is set the worker simply won't register routes with Caddy;
+	// all other runtime operations continue normally.
+	if pc, ok := rt.(*podmanRuntime.PodmanClient); ok {
+		injectCaddyManager(pc)
+	}
+
 	logger.Infoln("Agent daemon running. Press Ctrl+C to stop.")
 
 	return daemon.New(daemon.Config{
@@ -104,6 +115,27 @@ func runStart(server, agentName, token, runtimeName, tlsDir string) error {
 		ControlPlaneURL: server,
 		PreSharedToken:  token,
 	}, rt).Run(ctx)
+}
+
+// injectCaddyManager constructs the Caddy admin URL by inspecting the running
+// worker Caddy pod and injects a LocalCaddyManager into the PodmanClient for
+// route registration.
+//
+// The admin URL is derived from the live pod (port 2019 host mapping) — it is
+// never stored in config or asked from the user.
+// If the Caddy pod is not running, logs a warning and returns — all other
+// runtime operations continue normally.
+func injectCaddyManager(pc *podmanRuntime.PodmanClient) {
+	adminURL, err := configure.BuildAdminURL(pc)
+	if err != nil {
+		logger.Warningf("Agent: worker Caddy not available (%v) — run 'ai-services agent configure' to enable route registration\n", err)
+		return
+	}
+
+	pm := proxy.NewCaddyManager(adminURL, constants.CaddyServerName)
+	caddyMgr := proxy.NewLocalCaddyManagerAdapter(pm)
+	pc.SetCaddyManager(caddyMgr)
+	logger.Infof("Agent: worker Caddy configured at %s\n", adminURL)
 }
 
 // buildRuntime constructs the local runtime for the given name.

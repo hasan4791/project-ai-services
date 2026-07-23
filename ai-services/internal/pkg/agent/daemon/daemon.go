@@ -343,8 +343,8 @@ func (d *Daemon) dispatchToRuntime(ctx context.Context, cmd *agentpb.Command) ([
 
 	case agentpb.CommandType_COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER:
 		var p struct {
-			Image  string                 `json:"image"`
-			Cmd    []string               `json:"cmd"`
+			Image  string                   `json:"image"`
+			Cmd    []string                 `json:"cmd"`
 			Mounts []runtimetypes.BindMount `json:"mounts"`
 		}
 		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
@@ -352,6 +352,61 @@ func (d *Daemon) dispatchToRuntime(ctx context.Context, cmd *agentpb.Command) ([
 		}
 		exitCode, err := rt.RunEphemeralContainer(p.Image, p.Cmd, p.Mounts)
 		return marshalResult(exitCode, err)
+
+	// ── Caddy proxy management on the worker node ──────────────────
+
+	case agentpb.CommandType_COMMAND_TYPE_REGISTER_PROXY_ROUTE:
+		var p struct {
+			ID        string `json:"id"`
+			Domain    string `json:"domain"`
+			Upstream  string `json:"upstream"`
+			Terminal  bool   `json:"terminal"`
+			RouteType string `json:"type"`
+		}
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		err := rt.RegisterProxyRoute(ctx, runtimetypes.ProxyRoute{
+			ID:       p.ID,
+			Domain:   p.Domain,
+			Upstream: p.Upstream,
+			Terminal: p.Terminal,
+			Type:     p.RouteType,
+		})
+		return nil, err
+
+	case agentpb.CommandType_COMMAND_TYPE_UNREGISTER_PROXY_ROUTE:
+		var p struct{ RouteID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		return nil, rt.UnregisterProxyRoute(p.RouteID)
+
+	case agentpb.CommandType_COMMAND_TYPE_GET_PROXY_ROUTE:
+		var p struct{ RouteID string }
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.GetProxyRoute(p.RouteID)
+		return marshalResult(result, err)
+
+	case agentpb.CommandType_COMMAND_TYPE_PROXY_HEALTH_CHECK:
+		return nil, rt.ProxyHealthCheck()
+
+	// ── HTTP proxy tunnel ──────────────────────────────────────────
+
+	case agentpb.CommandType_COMMAND_TYPE_HTTP_PROXY:
+		var p struct {
+			Method    string            `json:"method"`
+			TargetURL string            `json:"target_url"`
+			Headers   map[string]string `json:"headers,omitempty"`
+			Body      []byte            `json:"body,omitempty"`
+		}
+		if err := json.Unmarshal(cmd.GetPayload(), &p); err != nil {
+			return nil, err
+		}
+		result, err := rt.HTTPProxy(ctx, p.Method, p.TargetURL, p.Headers, p.Body)
+		return marshalResult(result, err)
 
 	default:
 		return nil, fmt.Errorf("unknown command type: %v", cmd.GetType())

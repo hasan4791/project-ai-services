@@ -127,9 +127,29 @@ type listRoutesPayload struct{}
 type deletePVCsPayload struct{ AppLabel string }
 type getSystemInfoPayload struct{}
 type runEphemeralContainerPayload struct {
-	Image  string           `json:"image"`
-	Cmd    []string         `json:"cmd"`
+	Image  string            `json:"image"`
+	Cmd    []string          `json:"cmd"`
 	Mounts []types.BindMount `json:"mounts"`
+}
+
+// Proxy payload types – Caddy management on the remote worker.
+type registerProxyRoutePayload struct {
+	ID        string `json:"id"`
+	Domain    string `json:"domain"`
+	Upstream  string `json:"upstream"`
+	Terminal  bool   `json:"terminal"`
+	RouteType string `json:"type"`
+}
+type unregisterProxyRoutePayload struct{ RouteID string }
+type getProxyRoutePayload struct{ RouteID string }
+type proxyHealthCheckPayload struct{}
+
+// httpProxyPayload is the request payload for COMMAND_TYPE_HTTP_PROXY.
+type httpProxyPayload struct {
+	Method    string            `json:"method"`
+	TargetURL string            `json:"target_url"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      []byte            `json:"body,omitempty"`
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -276,4 +296,68 @@ func (r *RemoteRuntime) Type() types.RuntimeType {
 	default:
 		return types.RuntimeTypeRemotePodman
 	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Proxy operations – Caddy management on the remote worker node.
+// These dispatch over gRPC so the worker's local Caddy is managed remotely.
+// ──────────────────────────────────────────────────────────────────────────────
+
+// RegisterProxyRoute dispatches a route registration to the remote worker's Caddy.
+func (r *RemoteRuntime) RegisterProxyRoute(ctx context.Context, route types.ProxyRoute) error {
+	return r.dispatch(ctx, agentpb.CommandType_COMMAND_TYPE_REGISTER_PROXY_ROUTE,
+		registerProxyRoutePayload{
+			ID:        route.ID,
+			Domain:    route.Domain,
+			Upstream:  route.Upstream,
+			Terminal:  route.Terminal,
+			RouteType: route.Type,
+		}, nil)
+}
+
+// UnregisterProxyRoute dispatches a route removal to the remote worker's Caddy.
+func (r *RemoteRuntime) UnregisterProxyRoute(routeID string) error {
+	return r.dispatch(context.Background(), agentpb.CommandType_COMMAND_TYPE_UNREGISTER_PROXY_ROUTE,
+		unregisterProxyRoutePayload{RouteID: routeID}, nil)
+}
+
+// GetProxyRoute retrieves a route by ID from the remote worker's Caddy.
+func (r *RemoteRuntime) GetProxyRoute(routeID string) (*types.ProxyRoute, error) {
+	var result types.ProxyRoute
+	err := r.dispatch(context.Background(), agentpb.CommandType_COMMAND_TYPE_GET_PROXY_ROUTE,
+		getProxyRoutePayload{RouteID: routeID}, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ProxyHealthCheck verifies the remote worker's Caddy instance is reachable.
+func (r *RemoteRuntime) ProxyHealthCheck() error {
+	return r.dispatch(context.Background(), agentpb.CommandType_COMMAND_TYPE_PROXY_HEALTH_CHECK,
+		proxyHealthCheckPayload{}, nil)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// HTTP proxy tunnel
+// The control plane sends an HTTP request over the gRPC stream; the worker
+// executes it locally against a pod endpoint and returns the response.
+// ──────────────────────────────────────────────────────────────────────────────
+
+// HTTPProxy tunnels an HTTP request to the worker via the gRPC stream.
+// The worker daemon executes the request locally (inside the Podman network)
+// and returns the status, headers, and body as a single CommandResult.
+func (r *RemoteRuntime) HTTPProxy(ctx context.Context, method, targetURL string, headers map[string]string, body []byte) (*types.HTTPProxyResponse, error) {
+	var result types.HTTPProxyResponse
+	err := r.dispatch(ctx, agentpb.CommandType_COMMAND_TYPE_HTTP_PROXY,
+		httpProxyPayload{
+			Method:    method,
+			TargetURL: targetURL,
+			Headers:   headers,
+			Body:      body,
+		}, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

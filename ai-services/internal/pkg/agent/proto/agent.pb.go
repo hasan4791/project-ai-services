@@ -10,11 +10,12 @@
 package proto
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -52,6 +53,15 @@ const (
 	CommandType_COMMAND_TYPE_GET_SYSTEM_INFO         CommandType = 22
 	CommandType_COMMAND_TYPE_RUNTIME_TYPE            CommandType = 23
 	CommandType_COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER CommandType = 24
+
+	// Caddy proxy management on the worker node.
+	CommandType_COMMAND_TYPE_REGISTER_PROXY_ROUTE   CommandType = 25
+	CommandType_COMMAND_TYPE_UNREGISTER_PROXY_ROUTE CommandType = 26
+	CommandType_COMMAND_TYPE_GET_PROXY_ROUTE        CommandType = 27
+	CommandType_COMMAND_TYPE_PROXY_HEALTH_CHECK     CommandType = 28
+
+	// HTTP proxy tunnel through the gRPC stream.
+	CommandType_COMMAND_TYPE_HTTP_PROXY CommandType = 29
 )
 
 // Enum value maps for CommandType.
@@ -82,6 +92,11 @@ var (
 		22: "COMMAND_TYPE_GET_SYSTEM_INFO",
 		23: "COMMAND_TYPE_RUNTIME_TYPE",
 		24: "COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER",
+		25: "COMMAND_TYPE_REGISTER_PROXY_ROUTE",
+		26: "COMMAND_TYPE_UNREGISTER_PROXY_ROUTE",
+		27: "COMMAND_TYPE_GET_PROXY_ROUTE",
+		28: "COMMAND_TYPE_PROXY_HEALTH_CHECK",
+		29: "COMMAND_TYPE_HTTP_PROXY",
 	}
 	CommandType_value = map[string]int32{
 		"COMMAND_TYPE_UNSPECIFIED":             0,
@@ -109,6 +124,11 @@ var (
 		"COMMAND_TYPE_GET_SYSTEM_INFO":         22,
 		"COMMAND_TYPE_RUNTIME_TYPE":            23,
 		"COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER": 24,
+		"COMMAND_TYPE_REGISTER_PROXY_ROUTE":    25,
+		"COMMAND_TYPE_UNREGISTER_PROXY_ROUTE":  26,
+		"COMMAND_TYPE_GET_PROXY_ROUTE":         27,
+		"COMMAND_TYPE_PROXY_HEALTH_CHECK":      28,
+		"COMMAND_TYPE_HTTP_PROXY":              29,
 	}
 )
 

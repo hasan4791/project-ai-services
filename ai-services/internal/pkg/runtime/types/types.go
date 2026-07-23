@@ -81,3 +81,27 @@ type BindMount struct {
 	Destination string   // container path
 	Options     []string // e.g. ["Z"]
 }
+
+// HTTPProxyResponse carries the result of an HTTP request executed on the
+// worker node and returned to the control plane via the gRPC stream.
+type HTTPProxyResponse struct {
+	StatusCode int
+	Headers    map[string]string
+	Body       []byte
+}
+
+// ProxyRoute represents a reverse proxy route for the worker node's Caddy
+// instance.  Kept in runtime/types so the Runtime interface can
+// reference it without importing the proxy package (which would cause a cycle).
+type ProxyRoute struct {
+	// ID is the unique identifier for the route (used as @id in Caddy config).
+	ID string
+	// Domain is the hostname to match (e.g. "service.example.com").
+	Domain string
+	// Upstream is the backend address (e.g. "pod-name:8080").
+	Upstream string
+	// Terminal stops route matching after this route.
+	Terminal bool
+	// Type is the endpoint type label (e.g. "ui", "api").
+	Type string
+}
