@@ -282,6 +282,26 @@ func (r *RemoteRuntime) RunEphemeralContainer(image string, cmd []string, mounts
 	return exitCode, err
 }
 
+// WorkerIP returns the TCP source IP of the worker agent as observed by the
+// gateway, or empty string if not yet known.
+func (r *RemoteRuntime) WorkerIP() string {
+	entry, ok := r.registry.Get(r.agentName)
+	if !ok {
+		return ""
+	}
+	return entry.WorkerIP
+}
+
+// DomainSuffix returns the domain suffix the worker computed at configure time,
+// or empty string if not yet known.
+func (r *RemoteRuntime) DomainSuffix() string {
+	entry, ok := r.registry.Get(r.agentName)
+	if !ok {
+		return ""
+	}
+	return entry.DomainSuffix
+}
+
 // Type queries the remote agent for its local runtime type and maps it to the
 // corresponding remote constant (RuntimeTypeRemotePodman / RuntimeTypeRemoteOpenShift).
 // Falls back to RuntimeTypeRemotePodman on any error since all current agents run Podman.

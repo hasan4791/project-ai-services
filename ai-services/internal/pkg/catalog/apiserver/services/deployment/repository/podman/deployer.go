@@ -28,6 +28,7 @@ import (
 	podmodels "github.com/project-ai-services/ai-services/internal/pkg/models"
 	"github.com/project-ai-services/ai-services/internal/pkg/proxy"
 	"github.com/project-ai-services/ai-services/internal/pkg/runtime"
+	remoteruntime "github.com/project-ai-services/ai-services/internal/pkg/runtime/remote"
 	runtimetypes "github.com/project-ai-services/ai-services/internal/pkg/runtime/types"
 	"github.com/project-ai-services/ai-services/internal/pkg/specs"
 	"github.com/project-ai-services/ai-services/internal/pkg/utils"
@@ -1180,8 +1181,24 @@ func (d *PodmanDeployer) getCaddyConfiguration(ctx context.Context) (string, str
 	rt := d.runtime
 	switch rt.Type() {
 	case runtimetypes.RuntimeTypeRemotePodman, runtimetypes.RuntimeTypeRemoteOpenShift:
-		// use the worker's own Caddy via the gRPC stream.
-		return domainSuffix, httpsPort, proxy.NewRuntimeProxyManager(ctx, rt), nil
+		// For remote agents, routes are registered on the worker's own Caddy.
+		// The domain suffix must be the worker's — not the control-plane's DOMAIN_SUFFIX.
+		// Priority: domain suffix sent by worker at start-up > worker peer IP.nip.io.
+		rrt, ok := rt.(*remoteruntime.RemoteRuntime)
+		if !ok {
+			return "", "", nil, fmt.Errorf("getCaddyConfiguration: expected *RemoteRuntime for remote type")
+		}
+		workerDomainSuffix := rrt.DomainSuffix()
+		if workerDomainSuffix == "" {
+			// Fall back to deriving nip.io suffix from the observed peer IP.
+			workerIP := rrt.WorkerIP()
+			if workerIP == "" {
+				return "", "", nil, fmt.Errorf("getCaddyConfiguration: worker domain suffix not known for agent (run 'agent start' again?)")
+			}
+			workerDomainSuffix = fmt.Sprintf("%s.nip.io", strings.ReplaceAll(workerIP, ".", "-"))
+		}
+		logger.InfofCtx(ctx, "getCaddyConfiguration: remote agent — using worker domain suffix %s\n", workerDomainSuffix)
+		return workerDomainSuffix, httpsPort, proxy.NewRuntimeProxyManager(ctx, rt), nil
 	default:
 		// Local Podman: use the control-plane Caddy via CADDY_ADMIN_URL.
 		proxyManager, err := proxy.GetCaddyProxyManager()

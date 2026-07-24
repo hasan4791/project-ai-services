@@ -44,6 +44,15 @@ type AgentEntry struct {
 	LastHeartbeat time.Time
 	RegisteredAt  time.Time
 
+	// WorkerIP is the TCP source IP observed when the agent opens its
+	// CommandStream.  Set by the gateway from the gRPC peer info.
+	WorkerIP string
+
+	// DomainSuffix is the computed domain suffix for route registration on this
+	// worker (e.g. "192.168.1.5.nip.io" or "example.com").
+	// Sent by the agent at start-up via the RegisterRequest labels.
+	DomainSuffix string
+
 	// CommandCh is written by RemoteRuntime to send commands to this agent.
 	// The gateway goroutine reads from it and writes to the gRPC stream.
 	CommandCh chan *agentpb.Command
@@ -246,6 +255,24 @@ func (r *Registry) Get(agentName string) (*AgentEntry, bool) {
 	defer r.mu.RUnlock()
 	e, ok := r.agents[agentName]
 	return e, ok
+}
+
+// SetWorkerIP stores the observed peer IP for the named agent.
+func (r *Registry) SetWorkerIP(agentName, ip string) {
+	r.mu.Lock()
+	if e, ok := r.agents[agentName]; ok {
+		e.WorkerIP = ip
+	}
+	r.mu.Unlock()
+}
+
+// SetDomainSuffix stores the domain suffix for route registration on this worker.
+func (r *Registry) SetDomainSuffix(agentName, suffix string) {
+	r.mu.Lock()
+	if e, ok := r.agents[agentName]; ok {
+		e.DomainSuffix = suffix
+	}
+	r.mu.Unlock()
 }
 
 // DeliverResult routes an incoming CommandResult to the waiting RemoteRuntime call.

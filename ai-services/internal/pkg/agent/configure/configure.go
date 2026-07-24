@@ -18,7 +18,9 @@ import (
 	"text/template"
 
 	"github.com/project-ai-services/ai-services/assets"
+	"github.com/project-ai-services/ai-services/internal/pkg/agent/agentconfig"
 	clipodman "github.com/project-ai-services/ai-services/internal/pkg/cli/podman"
+	"github.com/project-ai-services/ai-services/internal/pkg/catalog/cli/common/podman/caddy"
 	"github.com/project-ai-services/ai-services/internal/pkg/constants"
 	"github.com/project-ai-services/ai-services/internal/pkg/logger"
 	podmodels "github.com/project-ai-services/ai-services/internal/pkg/models"
@@ -52,11 +54,17 @@ type Options struct {
 	// HTTPSPort is the host port Caddy listens on for external HTTPS traffic.
 	// Defaults to 8443.
 	HTTPSPort int
+	// DomainName is an optional custom domain (e.g. "example.com").
+	// Priority: SSLCertPath > DomainName > workerIP.nip.io (auto-detected).
+	DomainName string
+	// SSLCertPath and SSLKeyPath are optional paths to a wildcard TLS cert/key.
+	// When provided the domain is extracted from the certificate.
+	SSLCertPath string
+	SSLKeyPath  string
 }
 
-// DeployAgentCaddy writes the Caddyfile and deploys the agent Caddy pod.
-// Any existing pod (stale, failed, or wrong config) is removed and redeployed
-// to ensure the correct port bindings are always in place.
+// DeployAgentCaddy writes the Caddyfile, deploys the agent Caddy pod, and
+// persists the computed domain suffix to agentconfig for use by 'agent start'.
 func DeployAgentCaddy(ctx context.Context, opts Options) error {
 	if opts.Runtime == "" {
 		opts.Runtime = "podman"
@@ -111,7 +119,18 @@ func DeployAgentCaddy(ctx context.Context, opts Options) error {
 		return fmt.Errorf("agent configure: Caddy health check failed: %w", err)
 	}
 
-	logger.InfofCtx(ctx, "agent configure: Worker Caddy ready — admin %s, HTTPS :%d\n", adminURL, httpsPort)
+	// Step 5 — compute domain suffix (same priority as catalog configure) and
+	// persist it so 'agent start' can send it to the control plane.
+	domainSuffix, err := caddy.ComputeDomainConfig(opts.SSLCertPath, opts.SSLKeyPath, opts.DomainName)
+	if err != nil {
+		return fmt.Errorf("agent configure: compute domain suffix: %w", err)
+	}
+
+	if err := agentconfig.Save(agentconfig.AgentConfig{DomainSuffix: domainSuffix}); err != nil {
+		logger.Warningf("agent configure: could not persist domain suffix: %v\n", err)
+	}
+
+	logger.InfofCtx(ctx, "agent configure: Worker Caddy ready — admin %s, HTTPS :%d, domain *.%s\n", adminURL, httpsPort, domainSuffix)
 	logger.Infoln("Run 'ai-services agent start' to connect to the control plane.")
 	return nil
 }

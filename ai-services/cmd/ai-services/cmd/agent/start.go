@@ -79,10 +79,19 @@ func runStart(server, agentName, token, runtimeName, tlsDir string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	// Load domain suffix persisted by 'agent configure', send it as a label
+	// so the control plane can use it for route registration.
+	labels := map[string]string{}
+	if savedCfg, err := agentconfig.Load(); err == nil && savedCfg.DomainSuffix != "" {
+		labels["domain_suffix"] = savedCfg.DomainSuffix
+		logger.Infof("agent start: using domain suffix %s from agent config\n", savedCfg.DomainSuffix)
+	}
+
 	cfg := agentbootstrap.Config{
 		ControlPlaneURL: server,
 		AgentName:       agentName,
 		PreSharedToken:  token,
+		Labels:          labels,
 	}
 
 	if err := agentbootstrap.Register(ctx, cfg, tlsDir); err != nil {

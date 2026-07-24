@@ -13,6 +13,7 @@ import (
 	"github.com/project-ai-services/ai-services/internal/pkg/agent/registry"
 	"github.com/project-ai-services/ai-services/internal/pkg/logger"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/peer"
 )
 
 // Gateway is the gRPC server that accepts connections from worker agents.
@@ -113,6 +114,24 @@ func (g *Gateway) CommandStream(stream grpc.BidiStreamingServer[agentpb.CommandR
 
 	g.registry.MarkReady(ctx, agentName)
 	logger.InfofCtx(ctx, "AgentGateway: CommandStream opened for agent %s", agentName)
+
+	// Capture the worker's TCP source IP from the gRPC peer info so the
+	// deployer can build the correct domain suffix for route registration.
+	if p, ok := peer.FromContext(ctx); ok {
+		if host, _, err := net.SplitHostPort(p.Addr.String()); err == nil && host != "" {
+			g.registry.SetWorkerIP(agentName, host)
+			logger.InfofCtx(ctx, "AgentGateway: agent %s peer IP = %s", agentName, host)
+		}
+	}
+
+	// Capture the domain suffix the worker computed during 'agent configure'.
+	// Sent via RegisterRequest.Labels["domain_suffix"].
+	if entry, ok := g.registry.Get(agentName); ok {
+		if suffix := entry.Labels["domain_suffix"]; suffix != "" {
+			g.registry.SetDomainSuffix(agentName, suffix)
+			logger.InfofCtx(ctx, "AgentGateway: agent %s domain suffix = %s", agentName, suffix)
+		}
+	}
 
 	// Deliver the first message if it is a real result (not a heartbeat).
 	if !firstMsg.GetIsHeartbeat() {

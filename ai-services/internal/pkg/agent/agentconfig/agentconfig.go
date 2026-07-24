@@ -26,6 +26,9 @@ type AgentConfig struct {
 	AgentName string `json:"agent_name"`
 	// Server is the control-plane AgentGateway address (host:port).
 	Server string `json:"server"`
+	// DomainSuffix is the computed domain suffix for route registration,
+	// saved by 'agent configure' and sent to the control plane at start-up.
+	DomainSuffix string `json:"domain_suffix,omitempty"`
 }
 
 func configFilePath() (string, error) {

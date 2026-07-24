@@ -18,6 +18,9 @@ func newConfigureCmd() *cobra.Command {
 		baseDir     string
 		runtimeName string
 		httpsPort   int
+		domainName  string
+		sslCertPath string
+		sslKeyPath  string
 	)
 
 	cmd := &cobra.Command{
@@ -60,16 +63,22 @@ Run this once after 'ai-services bootstrap configure', before 'agent start'.`,
 			defer cancel()
 
 			return agentconfigure.DeployAgentCaddy(ctx, agentconfigure.Options{
-				BaseDir:   resolvedDir,
-				Runtime:   runtimeName,
-				HTTPSPort: httpsPort,
+				BaseDir:     resolvedDir,
+				Runtime:     runtimeName,
+				HTTPSPort:   httpsPort,
+				DomainName:  domainName,
+				SSLCertPath: sslCertPath,
+				SSLKeyPath:  sslKeyPath,
 			})
 		},
 	}
 
 	cmd.Flags().StringVarP(&runtimeName, "runtime", "r", "", "Local container runtime: podman or openshift (required)")
 	cmd.Flags().StringVar(&baseDir, "base-dir", "", fmt.Sprintf("Root data directory on this Worker LPAR (default: %s)", constants.DefaultBaseDir))
-	cmd.Flags().IntVar(&httpsPort, "https-port", 443, "Host port Caddy listens on for external HTTPS traffic")
+	cmd.Flags().IntVar(&httpsPort, "https-port", 8443, "Host port Caddy listens on for external HTTPS traffic")
+	cmd.Flags().StringVar(&domainName, "domain-name", "", "Custom domain name for service routes (e.g. example.com). Defaults to <worker-ip>.nip.io")
+	cmd.Flags().StringVar(&sslCertPath, "ssl-cert", "", "Path to wildcard SSL certificate (must be used with --ssl-key)")
+	cmd.Flags().StringVar(&sslKeyPath, "ssl-key", "", "Path to SSL private key (must be used with --ssl-cert)")
 
 	return cmd
 }
