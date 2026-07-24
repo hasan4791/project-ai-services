@@ -28,8 +28,8 @@ func newConfigureCmd() *cobra.Command {
 		Short: "Set up the Worker-side Caddy proxy pod (run once before agent start)",
 		Long: `Deploy the agent Caddy pod on this Worker LPAR.
 
-The Worker Caddy listens on hostPort 8443 so the control-plane Caddy can
-reverse-proxy to it directly.  Its admin API is bound to localhost:2019
+The Worker Caddy listens on hostPort 443 (default) for external HTTPS traffic.
+Its admin API is bound to localhost:2019
 so only the agent daemon can register and remove routes dynamically.
 
 This command is idempotent — re-running it will remove any existing pod
@@ -75,7 +75,7 @@ Run this once after 'ai-services bootstrap configure', before 'agent start'.`,
 
 	cmd.Flags().StringVarP(&runtimeName, "runtime", "r", "", "Local container runtime: podman or openshift (required)")
 	cmd.Flags().StringVar(&baseDir, "base-dir", "", fmt.Sprintf("Root data directory on this Worker LPAR (default: %s)", constants.DefaultBaseDir))
-	cmd.Flags().IntVar(&httpsPort, "https-port", 8443, "Host port Caddy listens on for external HTTPS traffic")
+	cmd.Flags().IntVar(&httpsPort, "https-port", 443, "Host port Caddy listens on for external HTTPS traffic")
 	cmd.Flags().StringVar(&domainName, "domain-name", "", "Custom domain name for service routes (e.g. example.com). Defaults to <worker-ip>.nip.io")
 	cmd.Flags().StringVar(&sslCertPath, "ssl-cert", "", "Path to wildcard SSL certificate (must be used with --ssl-key)")
 	cmd.Flags().StringVar(&sslKeyPath, "ssl-key", "", "Path to SSL private key (must be used with --ssl-cert)")

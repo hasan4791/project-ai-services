@@ -106,7 +106,7 @@ func DeployAgentCaddy(ctx context.Context, opts Options) error {
 	// Step 3 — render pod template and deploy.
 	httpsPort := opts.HTTPSPort
 	if httpsPort == 0 {
-		httpsPort = 8443
+		httpsPort = 443
 	}
 	if err := deployAgentCaddyPod(ctx, rt, opts.BaseDir, caddyImage, httpsPort); err != nil {
 		return err
