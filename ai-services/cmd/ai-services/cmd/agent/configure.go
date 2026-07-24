@@ -23,14 +23,15 @@ func newConfigureCmd() *cobra.Command {
 		sslKeyPath  string
 	)
 
+	const defaultHTTPSPort = 443
+
 	cmd := &cobra.Command{
 		Use:   "configure",
 		Short: "Set up the Worker-side Caddy proxy pod (run once before agent start)",
 		Long: `Deploy the agent Caddy pod on this Worker LPAR.
 
 The Worker Caddy listens on hostPort 443 (default) for external HTTPS traffic.
-Its admin API is bound to localhost:2019
-so only the agent daemon can register and remove routes dynamically.
+Its admin API is bound to a random loopback port assigned by the OS at runtime.
 
 This command is idempotent — re-running it will remove any existing pod
 and redeploy fresh to ensure the correct port bindings are in place.

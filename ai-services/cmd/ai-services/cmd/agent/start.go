@@ -138,7 +138,7 @@ func runStart(server, agentName, token, runtimeName, tlsDir string) error {
 // If the Caddy pod is not running, logs a warning and returns — all other
 // runtime operations continue normally.
 func injectCaddyManager(pc *podmanRuntime.PodmanClient) {
-	adminURL, err := configure.BuildAdminURL()
+	adminURL, err := configure.BuildAdminURL(pc)
 	if err != nil {
 		logger.Warningf("Agent: worker Caddy not available (%v) — run 'ai-services agent configure' to enable route registration\n", err)
 		return

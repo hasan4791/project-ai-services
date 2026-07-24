@@ -5,10 +5,9 @@ metadata:
   labels:
     ai-services.io/component: "agent-proxy"
   annotations:
-    # Expose the Caddy admin API on localhost only — reachable by the daemon
-    # process on the host OS but not from outside the Worker LPAR.
-    # Expose HTTPS on {{ .HTTPSPort }} as a hostPort for external service traffic.
-    ai-services.io/ports: "127.0.0.1:2019:2019, {{ .HTTPSPort }}:443"
+    # Admin API on a random loopback port (adminPort=0 → OS-assigned).
+    # Resolved at runtime via pod inspection — never reachable from outside.
+    ai-services.io/ports: "127.0.0.1:{{ .Values.caddy.adminPort }}:2019, {{ .Values.caddy.httpsPort }}:443"
 spec:
   restartPolicy: always
   containers:
