@@ -239,7 +239,7 @@ func readAgentValues() (*agentCaddyValues, error) {
 }
 
 // BuildAdminURL inspects the running worker Caddy pod and returns the host-side
-// admin URL (e.g. "http://localhost:37249"). Matches the catalog pattern exactly.
+// admin URL (e.g. "http://localhost:37249").
 func BuildAdminURL(rt *podman.PodmanClient) (string, error) {
 	adminPort, err := proxy.GetCaddyAdminPort(rt, AgentCaddyPodName)
 	if err != nil {

@@ -42,26 +42,6 @@ func ComputeDomainConfig(sslCertPath, sslKeyPath, domainName string) (string, er
 	return domainSuffix, nil
 }
 
-// getCaddyAdminPort retrieves the host port mapped to Caddy's admin API (container port 2019).
-func getCaddyAdminPort(runtime *podman.PodmanClient, podName string) (string, error) {
-	pod, err := runtime.InspectPod(podName)
-	if err != nil {
-		return "", fmt.Errorf("failed to inspect Caddy pod: %w", err)
-	}
-
-	// Get port mappings from the Ports field
-	// Ports is a map[string][]string where key is "containerPort/protocol" and value is list of host ports
-	// Example: {"2019/tcp": ["37249"], "443/tcp": ["39341"]}
-	for containerPort, hostPorts := range pod.Ports {
-		// Check if this is the admin API port (2019)
-		if strings.HasPrefix(containerPort, "2019/") && len(hostPorts) > 0 {
-			return hostPorts[0], nil
-		}
-	}
-
-	return "", fmt.Errorf("admin port mapping not found in pod ports")
-}
-
 // getHTTPSPort retrieves the HTTPS port from the Caddy pod.
 func getHTTPSPort(runtime *podman.PodmanClient, caddyPodName string) (string, error) {
 	// Get pod details
