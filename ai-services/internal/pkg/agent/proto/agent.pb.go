@@ -10,12 +10,11 @@
 package proto
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -53,14 +52,14 @@ const (
 	CommandType_COMMAND_TYPE_GET_SYSTEM_INFO         CommandType = 22
 	CommandType_COMMAND_TYPE_RUNTIME_TYPE            CommandType = 23
 	CommandType_COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER CommandType = 24
-
 	// Caddy proxy management on the worker node.
 	CommandType_COMMAND_TYPE_REGISTER_PROXY_ROUTE   CommandType = 25
 	CommandType_COMMAND_TYPE_UNREGISTER_PROXY_ROUTE CommandType = 26
 	CommandType_COMMAND_TYPE_GET_PROXY_ROUTE        CommandType = 27
 	CommandType_COMMAND_TYPE_PROXY_HEALTH_CHECK     CommandType = 28
-
 	// HTTP proxy tunnel through the gRPC stream.
+	// The control plane sends an HTTP request; the worker executes it locally
+	// against a pod endpoint and returns the response.
 	CommandType_COMMAND_TYPE_HTTP_PROXY CommandType = 29
 )
 
@@ -163,8 +162,9 @@ type RegisterRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	AgentName      string                 `protobuf:"bytes,1,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
 	PreSharedToken string                 `protobuf:"bytes,2,opt,name=pre_shared_token,json=preSharedToken,proto3" json:"pre_shared_token,omitempty"`
-	Labels         map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Capabilities   map[string]string      `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	CsrPem         []byte                 `protobuf:"bytes,3,opt,name=csr_pem,json=csrPem,proto3" json:"csr_pem,omitempty"` // The PKCS#10 CSR payload
+	Labels         map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Capabilities   map[string]string      `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -213,6 +213,13 @@ func (x *RegisterRequest) GetPreSharedToken() string {
 	return ""
 }
 
+func (x *RegisterRequest) GetCsrPem() []byte {
+	if x != nil {
+		return x.CsrPem
+	}
+	return nil
+}
+
 func (x *RegisterRequest) GetLabels() map[string]string {
 	if x != nil {
 		return x.Labels
@@ -228,11 +235,9 @@ func (x *RegisterRequest) GetCapabilities() map[string]string {
 }
 
 type RegisterResponse struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	AgentName string                 `protobuf:"bytes,1,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
-	// tls_cert_pem / tls_key_pem are reserved for future mTLS support.
-	TlsCertPem    string `protobuf:"bytes,2,opt,name=tls_cert_pem,json=tlsCertPem,proto3" json:"tls_cert_pem,omitempty"`
-	TlsKeyPem     string `protobuf:"bytes,3,opt,name=tls_key_pem,json=tlsKeyPem,proto3" json:"tls_key_pem,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentName     string                 `protobuf:"bytes,1,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
+	TlsCertPem    []byte                 `protobuf:"bytes,2,opt,name=tls_cert_pem,json=tlsCertPem,proto3" json:"tls_cert_pem,omitempty"` // Client certificate
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -274,18 +279,11 @@ func (x *RegisterResponse) GetAgentName() string {
 	return ""
 }
 
-func (x *RegisterResponse) GetTlsCertPem() string {
+func (x *RegisterResponse) GetTlsCertPem() []byte {
 	if x != nil {
 		return x.TlsCertPem
 	}
-	return ""
-}
-
-func (x *RegisterResponse) GetTlsKeyPem() string {
-	if x != nil {
-		return x.TlsKeyPem
-	}
-	return ""
+	return nil
 }
 
 type Command struct {
@@ -436,25 +434,25 @@ var File_internal_pkg_agent_proto_agent_proto protoreflect.FileDescriptor
 
 const file_internal_pkg_agent_proto_agent_proto_rawDesc = "" +
 	"\n" +
-	"$internal/pkg/agent/proto/agent.proto\x12\bagent.v1\"\xe6\x02\n" +
+	"$internal/pkg/agent/proto/agent.proto\x12\bagent.v1\"\xff\x02\n" +
 	"\x0fRegisterRequest\x12\x1d\n" +
 	"\n" +
 	"agent_name\x18\x01 \x01(\tR\tagentName\x12(\n" +
-	"\x10pre_shared_token\x18\x02 \x01(\tR\x0epreSharedToken\x12=\n" +
-	"\x06labels\x18\x03 \x03(\v2%.agent.v1.RegisterRequest.LabelsEntryR\x06labels\x12O\n" +
-	"\fcapabilities\x18\x04 \x03(\v2+.agent.v1.RegisterRequest.CapabilitiesEntryR\fcapabilities\x1a9\n" +
+	"\x10pre_shared_token\x18\x02 \x01(\tR\x0epreSharedToken\x12\x17\n" +
+	"\acsr_pem\x18\x03 \x01(\fR\x06csrPem\x12=\n" +
+	"\x06labels\x18\x04 \x03(\v2%.agent.v1.RegisterRequest.LabelsEntryR\x06labels\x12O\n" +
+	"\fcapabilities\x18\x05 \x03(\v2+.agent.v1.RegisterRequest.CapabilitiesEntryR\fcapabilities\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +
 	"\x11CapabilitiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"s\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"S\n" +
 	"\x10RegisterResponse\x12\x1d\n" +
 	"\n" +
 	"agent_name\x18\x01 \x01(\tR\tagentName\x12 \n" +
-	"\ftls_cert_pem\x18\x02 \x01(\tR\n" +
-	"tlsCertPem\x12\x1e\n" +
-	"\vtls_key_pem\x18\x03 \x01(\tR\ttlsKeyPem\"m\n" +
+	"\ftls_cert_pem\x18\x02 \x01(\fR\n" +
+	"tlsCertPem\"m\n" +
 	"\aCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12)\n" +
@@ -468,7 +466,7 @@ const file_internal_pkg_agent_proto_agent_proto_rawDesc = "" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12!\n" +
 	"\fis_heartbeat\x18\x05 \x01(\bR\visHeartbeat\x12\x1d\n" +
 	"\n" +
-	"agent_name\x18\x06 \x01(\tR\tagentName*\x9b\x06\n" +
+	"agent_name\x18\x06 \x01(\tR\tagentName*\xcf\a\n" +
 	"\vCommandType\x12\x1c\n" +
 	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18COMMAND_TYPE_LIST_IMAGES\x10\x01\x12\x1b\n" +
@@ -495,7 +493,12 @@ const file_internal_pkg_agent_proto_agent_proto_rawDesc = "" +
 	"\x18COMMAND_TYPE_DELETE_PVCS\x10\x15\x12 \n" +
 	"\x1cCOMMAND_TYPE_GET_SYSTEM_INFO\x10\x16\x12\x1d\n" +
 	"\x19COMMAND_TYPE_RUNTIME_TYPE\x10\x17\x12(\n" +
-	"$COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER\x10\x182\x92\x01\n" +
+	"$COMMAND_TYPE_RUN_EPHEMERAL_CONTAINER\x10\x18\x12%\n" +
+	"!COMMAND_TYPE_REGISTER_PROXY_ROUTE\x10\x19\x12'\n" +
+	"#COMMAND_TYPE_UNREGISTER_PROXY_ROUTE\x10\x1a\x12 \n" +
+	"\x1cCOMMAND_TYPE_GET_PROXY_ROUTE\x10\x1b\x12#\n" +
+	"\x1fCOMMAND_TYPE_PROXY_HEALTH_CHECK\x10\x1c\x12\x1b\n" +
+	"\x17COMMAND_TYPE_HTTP_PROXY\x10\x1d2\x92\x01\n" +
 	"\fAgentGateway\x12A\n" +
 	"\bRegister\x12\x19.agent.v1.RegisterRequest\x1a\x1a.agent.v1.RegisterResponse\x12?\n" +
 	"\rCommandStream\x12\x17.agent.v1.CommandResult\x1a\x11.agent.v1.Command(\x010\x01BEZCgithub.com/project-ai-services/ai-services/internal/pkg/agent/protob\x06proto3"
