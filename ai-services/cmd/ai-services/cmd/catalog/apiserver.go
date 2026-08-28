@@ -120,16 +120,16 @@ func buildAPIServerOptions(ctx context.Context, pool *pgxpool.Pool, secretKey, a
 	}
 
 	opts := apiserver.APIServerOptions{
-		Port:               0, // set by caller
-		AuthService:        authSvc,
-		TokenManager:       tokenMgr,
-		Blacklist:          blacklist,
-		ApplicationService: apirepository.NewApplicationService(appRepo, svcRepo, compRepo, svcDepRepo, catalogProvider, vars.RuntimeFactory.GetRuntimeType()),
-		DatasourceService:  datasourceSvc,
-		BundleService:      bundlesvc.NewBundleService(bundleRepo, svcRepo, compRepo, catalogProvider),
-		CatalogProvider:    catalogProvider,
-		WorkerGatewayPort:  workerGatewayPort,
-		WorkerRegistry:     workerReg,
+		Port:                0, // set by caller
+		AuthService:         authSvc,
+		TokenManager:        tokenMgr,
+		Blacklist:           blacklist,
+		ApplicationService:  apirepository.NewApplicationService(appRepo, svcRepo, compRepo, svcDepRepo, catalogProvider, vars.RuntimeFactory.GetRuntimeType()),
+		DatasourceService:   datasourceSvc,
+		BundleService:       bundlesvc.NewBundleService(bundleRepo, svcRepo, compRepo, catalogProvider),
+		CatalogProvider:     catalogProvider,
+		WorkerGatewayPort: workerGatewayPort,
+		WorkerRegistry:    workerReg,
 	}
 	cleanup := func() {
 		blacklist.Stop()
@@ -185,7 +185,7 @@ func NewAPIServerCmd() *cobra.Command {
 		manageiqURL            string
 		manageiqInsecure       bool
 		runtimeType            string
-		workerGatewayPort      int
+		workerGatewayPort int
 	)
 
 	apiserverCmd := &cobra.Command{

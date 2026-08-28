@@ -99,12 +99,29 @@ func preregister(t *testing.T, reg *registry.Registry, workerName string) string
 
 // startTestGateway creates an in-process gRPC server backed by bufconn and
 // returns a connected client plus a stop func.
-func startTestGateway(t *testing.T, reg *registry.Registry) (workerpb.WorkerGatewayClient, func()) {
+// workerID, if non-empty, is injected into every incoming context via a
+// stream/unary interceptor — simulating what authStreamInterceptor does when
+// a real mTLS client cert is verified by the TLS layer.
+func startTestGateway(t *testing.T, reg *registry.Registry, workerID string) (workerpb.WorkerGatewayClient, func()) {
 	t.Helper()
 
 	lis := bufconn.Listen(bufSize)
-	gw := New(reg)
-	gw.grpcServer = grpc.NewServer()
+	gw := &Gateway{registry: reg}
+
+	injectID := func(ctx context.Context) context.Context {
+		if workerID != "" {
+			return context.WithValue(ctx, workerIDCtxKey, workerID)
+		}
+		return ctx
+	}
+	gw.grpcServer = grpc.NewServer(
+		grpc.UnaryInterceptor(func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			return handler(injectID(ctx), req)
+		}),
+		grpc.StreamInterceptor(func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			return handler(srv, &wrappedStream{ServerStream: ss, ctx: injectID(ss.Context())})
+		}),
+	)
 	workerpb.RegisterWorkerGatewayServer(gw.grpcServer, gw)
 
 	go gw.grpcServer.Serve(lis) //nolint:errcheck
@@ -137,7 +154,7 @@ func TestGateway_Register_ValidToken(t *testing.T) {
 	reg := registry.New(newFakeWorkerRepo())
 	token := preregister(t, reg, "worker-1")
 
-	client, stop := startTestGateway(t, reg)
+	client, stop := startTestGateway(t, reg, "")
 	defer stop()
 
 	resp, err := client.Register(context.Background(), &workerpb.RegisterRequest{
@@ -160,7 +177,7 @@ func TestGateway_Register_ValidToken(t *testing.T) {
 func TestGateway_Register_InvalidToken(t *testing.T) {
 	reg := registry.New(newFakeWorkerRepo())
 
-	client, stop := startTestGateway(t, reg)
+	client, stop := startTestGateway(t, reg, "")
 	defer stop()
 
 	_, err := client.Register(context.Background(), &workerpb.RegisterRequest{
@@ -175,7 +192,7 @@ func TestGateway_Register_TokenSingleUse(t *testing.T) {
 	reg := registry.New(newFakeWorkerRepo())
 	token := preregister(t, reg, "worker-1")
 
-	client, stop := startTestGateway(t, reg)
+	client, stop := startTestGateway(t, reg, "")
 	defer stop()
 
 	// First use succeeds.
@@ -199,10 +216,12 @@ func TestGateway_Register_TokenSingleUse(t *testing.T) {
 // CommandStream RPC
 // ──────────────────────────────────────────────────────────────────────────────
 
+// No workerID injected — simulates a connection with no mTLS cert.
+// identifyWorker must return Unauthenticated because there is no identity in context.
 func TestGateway_CommandStream_UnregisteredWorker(t *testing.T) {
 	reg := registry.New(newFakeWorkerRepo())
 
-	client, stop := startTestGateway(t, reg)
+	client, stop := startTestGateway(t, reg, "")
 	defer stop()
 
 	stream, err := client.CommandStream(context.Background())
@@ -221,10 +240,11 @@ func TestGateway_CommandStream_UnregisteredWorker(t *testing.T) {
 	}
 }
 
+// No workerID injected — same Unauthenticated path as UnregisteredWorker.
 func TestGateway_CommandStream_MissingWorkerName(t *testing.T) {
 	reg := registry.New(newFakeWorkerRepo())
 
-	client, stop := startTestGateway(t, reg)
+	client, stop := startTestGateway(t, reg, "")
 	defer stop()
 
 	stream, err := client.CommandStream(context.Background())
@@ -248,7 +268,7 @@ func TestGateway_CommandStream_CommandDelivered(t *testing.T) {
 	reg := registry.New(repo)
 	token := preregister(t, reg, "worker-2")
 
-	client, stop := startTestGateway(t, reg)
+	client, stop := startTestGateway(t, reg, "worker-2")
 	defer stop()
 
 	// Register the worker via the RPC.
@@ -303,7 +323,7 @@ func TestGateway_CommandStream_ResultRouted(t *testing.T) {
 	reg := registry.New(repo)
 	token := preregister(t, reg, "worker-3")
 
-	client, stop := startTestGateway(t, reg)
+	client, stop := startTestGateway(t, reg, "worker-3")
 	defer stop()
 
 	if _, err := client.Register(context.Background(), &workerpb.RegisterRequest{
@@ -364,7 +384,7 @@ func TestGateway_CommandStream_Disconnect(t *testing.T) {
 	reg := registry.New(repo)
 	token := preregister(t, reg, "worker-4")
 
-	client, stop := startTestGateway(t, reg)
+	client, stop := startTestGateway(t, reg, "worker-4")
 	defer stop()
 
 	if _, err := client.Register(context.Background(), &workerpb.RegisterRequest{

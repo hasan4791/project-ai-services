@@ -81,7 +81,6 @@ type APIserver struct {
 
 // NewAPIserver creates a new instance of the API server with the provided options, setting default values where necessary.
 func NewAPIserver(options APIServerOptions) *APIserver {
-	// Set default port if not provided
 	if options.Port == 0 {
 		options.Port = 8080
 	}
@@ -90,30 +89,34 @@ func NewAPIserver(options APIServerOptions) *APIserver {
 	}
 
 	return &APIserver{
-		port:               options.Port,
-		authService:        options.AuthService,
-		tokenManager:       options.TokenManager,
-		blacklist:          options.Blacklist,
-		applicationService: options.ApplicationService,
-		datasourceService:  options.DatasourceService,
-		bundleService:      options.BundleService,
-		catalogProvider:    options.CatalogProvider,
-		workerGatewayPort:  options.WorkerGatewayPort,
-		workerRegistry:     options.WorkerRegistry,
+		port:                options.Port,
+		authService:         options.AuthService,
+		tokenManager:        options.TokenManager,
+		blacklist:           options.Blacklist,
+		applicationService:  options.ApplicationService,
+		datasourceService:   options.DatasourceService,
+		bundleService:       options.BundleService,
+		catalogProvider:     options.CatalogProvider,
+		workerGatewayPort: options.WorkerGatewayPort,
+		workerRegistry:    options.WorkerRegistry,
 	}
 }
 
 // Start initializes the API server and begins listening for incoming requests on the configured port.
-// It sets up the router with authentication middleware and routes, and starts the gRPC worker gateway.
+// It starts the gRPC worker gateway (with mTLS) then serves HTTP.
 // ctx should be a signal-aware context (e.g. from signal.NotifyContext) so that SIGINT/SIGTERM
 // trigger graceful shutdown of the gateway and sweeper.
 func (a *APIserver) Start(ctx context.Context) error {
-	// Wrap with CancelCause so the gateway can abort the whole process if Serve fails.
+	// Wrap with CancelCause so a gateway failure can abort the whole process.
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 
-	// Start the gRPC worker gateway.
-	gw := gateway.New(a.workerRegistry)
+	// Start the gRPC worker gateway — PKI is loaded/generated from gateway.DefaultPKIDir.
+	// The server cert carries gateway.GatewayServerName as its DNS SAN.
+	gw, err := gateway.New(ctx, a.workerRegistry, "")
+	if err != nil {
+		return fmt.Errorf("failed to initialise worker gateway: %w", err)
+	}
 	gatewayAddr := fmt.Sprintf(":%d", a.workerGatewayPort)
 	if err := gw.Start(ctx, cancel, gatewayAddr); err != nil {
 		return fmt.Errorf("failed to start worker gateway: %w", err)

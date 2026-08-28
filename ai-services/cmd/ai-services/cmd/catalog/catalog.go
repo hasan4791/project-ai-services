@@ -29,7 +29,6 @@ deploy them, and handle service metadata`,
 	catalogCMD.AddCommand(NewInfoCmd())
 	catalogCMD.AddCommand(NewWorkerCmd())
 	catalogCMD.AddCommand(bundle.NewBundleCmd())
-
 	return catalogCMD
 }
 

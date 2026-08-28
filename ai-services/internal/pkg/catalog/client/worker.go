@@ -96,3 +96,4 @@ func (c *Client) deleteWorkerByID(ctx context.Context, id string) error {
 
 	return nil
 }
+

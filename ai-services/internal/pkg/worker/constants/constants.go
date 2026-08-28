@@ -16,4 +16,10 @@ const (
 	MetaKeyBaseDir      = "basedir"
 	MetaKeyDomainSuffix = "domainSuffix"
 	MetaKeyHTTPSPort    = "httpsPort"
+
+	// GatewayServerName is the fixed DNS SAN embedded in the auto-generated gateway server
+	// certificate. Workers set tls.Config.ServerName to this value so hostname verification
+	// succeeds regardless of the IP or public DNS name used to reach the gateway.
+	// Must match gateway.GatewayServerName — defined here to avoid an import cycle.
+	GatewayServerName = "worker-gateway.ai-services.internal"
 )

@@ -533,20 +533,23 @@ func GetModelsPath() string {
 func ValidateBaseDir(baseDir string) (string, error) {
 	// Fall back to the default when the flag was not set.
 	if baseDir == "" {
-		return constants.DefaultBaseDir, nil
+		baseDir = constants.DefaultBaseDir
+	} else {
+		// Resolve relative paths to absolute paths to prevent Podman from mounting
+		// the wrong (or empty) host directory.
+		absBase, err := filepath.Abs(baseDir)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve absolute path: %w", err)
+		}
+
+		// Clean the absolute path and append ai-services subdirectory
+		baseDir = filepath.Join(filepath.Clean(absBase), "ai-services")
 	}
 
-	// Resolve relative paths to absolute paths to prevent Podman from mounting
-	// the wrong (or empty) host directory.
-	absBase, err := filepath.Abs(baseDir)
-	if err != nil {
-		return "", fmt.Errorf("cannot resolve absolute path: %w", err)
-	}
-
-	// Clean the absolute path and append ai-services subdirectory
-	baseDir = filepath.Join(filepath.Clean(absBase), "ai-services")
-
-	// Check if directory exists or can be created
+	// Ensure the directory exists with the correct permissions (0755) so that
+	// non-root container processes can traverse into subdirectories inside it.
+	// Without this, podman's DirectoryOrCreate would create the host directory
+	// as root:root 0700, blocking container processes running as non-root UIDs.
 	if err := os.MkdirAll(baseDir, constants.DirPerm); err != nil {
 		return "", fmt.Errorf("cannot create directory: %w", err)
 	}

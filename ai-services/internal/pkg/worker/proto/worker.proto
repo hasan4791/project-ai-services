@@ -25,19 +25,22 @@ service WorkerGateway {
 // ──────────────────────────────────────────────────────────────────────────────
 
 message RegisterRequest {
-  string worker_name      = 1;
-  string pre_shared_token = 2;
-  map<string, string> metadata = 3;
+  string pre_shared_token      = 1;
+  map<string, string> metadata = 2;
   // runtime_type declares the execution environment of the worker
   // (e.g. "podman", "openshift"). The control plane persists this to the DB.
-  string runtime_type     = 4;
+  string runtime_type          = 3;
+  // csr_pem is a PKCS#10 CSR generated locally by the worker.
+  // The gateway signs it and returns the signed cert in RegisterResponse.
+  bytes  csr_pem               = 4;
 }
 
 message RegisterResponse {
   string worker_name  = 1;
-  // tls_cert_pem / tls_key_pem are reserved for future mTLS support.
-  string tls_cert_pem = 2;
-  string tls_key_pem  = 3;
+  // tls_cert_pem is the CA-signed client certificate (written to tls.crt on the worker).
+  bytes  tls_cert_pem = 2;
+  // ca_cert_pem is the root CA public cert (written to ca.crt on the worker for server verification).
+  bytes  ca_cert_pem  = 3;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
