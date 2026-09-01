@@ -56,10 +56,6 @@ const (
 	sweepInterval = 30 * time.Second
 )
 
-type contextKey string
-
-const workerIDCtxKey contextKey = "worker_id"
-
 // Gateway is the gRPC server that accepts connections from workers.
 type Gateway struct {
 	workerpb.UnimplementedWorkerGatewayServer
@@ -313,47 +309,42 @@ func fileExists(path string) bool {
 // Interceptors (mTLS enforcement)
 // ──────────────────────────────────────────────────────────────────────────────
 
-// authUnaryInterceptor bypasses mTLS for Register (token auth), enforces it for all other unary RPCs.
+// authUnaryInterceptor enforces that non-Register unary RPCs carry a valid
+// CA-signed client certificate. Register is exempt — it uses token auth and
+// runs before the worker has a cert.
 func (g *Gateway) authUnaryInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	if info.FullMethod == workerpb.WorkerGateway_Register_FullMethodName {
 		return handler(ctx, req)
 	}
-	workerID, err := extractWorkerIdentity(ctx)
-	if err != nil {
+	if err := requireClientCert(ctx); err != nil {
 		return nil, err
 	}
-	return handler(context.WithValue(ctx, workerIDCtxKey, workerID), req)
+	return handler(ctx, req)
 }
 
-// authStreamInterceptor enforces mTLS for all streams (CommandStream).
+// authStreamInterceptor enforces that CommandStream connections carry a valid
+// CA-signed client certificate. Register is unary and goes through authUnaryInterceptor,
+// so this interceptor can unconditionally require a verified client cert.
 func (g *Gateway) authStreamInterceptor(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	workerID, err := extractWorkerIdentity(ss.Context())
-	if err != nil {
+	if err := requireClientCert(ss.Context()); err != nil {
 		return err
 	}
-	wrapped := &wrappedStream{ServerStream: ss, ctx: context.WithValue(ss.Context(), workerIDCtxKey, workerID)}
-	return handler(srv, wrapped)
+	return handler(srv, ss)
 }
 
-// extractWorkerIdentity derives the worker identity from the verified TLS chain (CN).
-func extractWorkerIdentity(ctx context.Context) (string, error) {
+// requireClientCert checks that the context contains a peer with a CA-verified
+// client certificate. Returns codes.Unauthenticated if the check fails.
+func requireClientCert(ctx context.Context) error {
 	p, ok := peer.FromContext(ctx)
 	if !ok || p.AuthInfo == nil {
-		return "", status.Error(codes.Unauthenticated, "no peer identity found")
+		return status.Error(codes.Unauthenticated, "no peer identity found")
 	}
 	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
 	if !ok || len(tlsInfo.State.VerifiedChains) == 0 || len(tlsInfo.State.VerifiedChains[0]) == 0 {
-		return "", status.Error(codes.Unauthenticated, "mTLS client certificate required")
+		return status.Error(codes.Unauthenticated, "mTLS client certificate required")
 	}
-	return tlsInfo.State.VerifiedChains[0][0].Subject.CommonName, nil
+	return nil
 }
-
-type wrappedStream struct {
-	grpc.ServerStream
-	ctx context.Context
-}
-
-func (w *wrappedStream) Context() context.Context { return w.ctx }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // WorkerGatewayServer implementation
@@ -467,14 +458,21 @@ func (g *Gateway) CommandStream(stream grpc.BidiStreamingServer[workerpb.Command
 	}
 }
 
-// identifyWorker derives the worker name from the verified mTLS cert CN (set
-// in context by authStreamInterceptor), then reads the first stream message to
-// kick off heartbeat/result dispatch. Identity comes from the cert — not the message.
+// identifyWorker reads the first message from the stream, validates the worker
+// is known, and returns the worker name and registry entry.
+//
+// Error codes used by the worker daemon to decide its retry strategy:
+//   - codes.Unauthenticated — worker not in registry; must call Register before retrying CommandStream.
+//   - codes.InvalidArgument  — first message is malformed; worker has a bug.
+//   - any other error        — transient; retry CommandStream with backoff (no re-registration needed).
 func (g *Gateway) identifyWorker(ctx context.Context, stream grpc.BidiStreamingServer[workerpb.CommandResult, workerpb.Command]) (string, *registry.WorkerEntry, error) {
-	// Identity is cryptographically authoritative — comes from the verified TLS chain.
-	workerName, ok := ctx.Value(workerIDCtxKey).(string)
-	if !ok || workerName == "" {
-		return "", nil, status.Error(codes.Unauthenticated, "CommandStream: no worker identity in context")
+	firstMsg, err := stream.Recv()
+	if err != nil {
+		return "", nil, fmt.Errorf("CommandStream: failed to receive first message: %w", err)
+	}
+	workerName := firstMsg.GetWorkerName()
+	if workerName == "" {
+		return "", nil, status.Error(codes.InvalidArgument, "CommandStream: first message missing worker_name")
 	}
 
 	entry, ok := g.registry.Get(workerName)
@@ -485,11 +483,6 @@ func (g *Gateway) identifyWorker(ctx context.Context, stream grpc.BidiStreamingS
 
 	logger.InfofCtx(ctx, "WorkerGateway: CommandStream opened for worker %s", workerName)
 
-	// Still read the first message — it may carry a result or heartbeat.
-	firstMsg, err := stream.Recv()
-	if err != nil {
-		return "", nil, fmt.Errorf("CommandStream: failed to receive first message: %w", err)
-	}
 	if firstMsg.GetIsHeartbeat() {
 		g.registry.UpdateHeartbeat(ctx, workerName)
 	} else {
