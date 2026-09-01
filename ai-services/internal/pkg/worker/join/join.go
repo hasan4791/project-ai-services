@@ -61,9 +61,6 @@ const (
 
 	// retryBackoffFactor is the exponential multiplier applied to the backoff duration.
 	retryBackoffFactor = 2
-
-	// credCheckTimeout is the deadline for the live mTLS credential probe.
-	credCheckTimeout = 10 * time.Second
 )
 
 // Options carries everything needed to join a worker to the catalog control plane.
@@ -110,7 +107,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	// ── Step 1: Check for existing valid mTLS credentials ────────────────────
-	if hasValidTLSCredentials(ctx, opts.GatewayAddr, opts.TLSDir) {
+	if hasValidTLSCredentials(ctx, opts.TLSDir) {
 		logger.InfofCtx(ctx, "worker join: valid mTLS credentials found in %s, skipping registration", opts.TLSDir)
 		return connectAndStream(ctx, rt, opts.GatewayAddr, opts.TLSDir, meta)
 	}
@@ -206,8 +203,8 @@ func bootstrap(ctx context.Context, gatewayAddr, token, tlsDir string, rt types.
 // ─── credential check ─────────────────────────────────────────────────────────
 
 // hasValidTLSCredentials returns true when tls.crt + tls.key exist in tlsDir,
-// the cert has not expired, and a live mTLS probe to the gateway succeeds.
-func hasValidTLSCredentials(ctx context.Context, gatewayAddr, tlsDir string) bool {
+// the cert has not expired, and the cert is signed by the stored ca.crt.
+func hasValidTLSCredentials(ctx context.Context, tlsDir string) bool {
 	cert, err := tls.LoadX509KeyPair(
 		filepath.Join(tlsDir, "tls.crt"),
 		filepath.Join(tlsDir, "tls.key"),
@@ -223,29 +220,27 @@ func hasValidTLSCredentials(ctx context.Context, gatewayAddr, tlsDir string) boo
 		return false
 	}
 
-	tlsCfg, err := buildTLSConfig(tlsDir, &cert)
+	// Verify the client cert against the stored CA so we catch cases where
+	// the CA was rotated and the on-disk cert is no longer trusted.
+	caPath := filepath.Join(tlsDir, "ca.crt")
+	caPEM, err := os.ReadFile(caPath)
 	if err != nil {
-		logger.WarningfCtx(ctx, "worker join: TLS config error during credential check: %v", err)
-		return false
-	}
-	conn, err := grpc.NewClient(gatewayAddr, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
-	if err != nil {
-		logger.WarningfCtx(ctx, "worker join: credential check dial failed: %v", err)
-		return false
-	}
-	defer conn.Close()
-
-	probeCtx, cancel := context.WithTimeout(ctx, credCheckTimeout)
-	defer cancel()
-	_, err = workerpb.NewWorkerGatewayClient(conn).Register(probeCtx, &workerpb.RegisterRequest{})
-	if err != nil {
-		code := status.Code(err)
-		if code == codes.Unauthenticated || code == codes.Unavailable {
-			logger.WarningfCtx(ctx, "worker join: credential check rejected (%s): %v", code, err)
-			return false
+		if os.IsNotExist(err) {
+			// No CA stored yet — key-pair alone is sufficient evidence.
+			return true
 		}
-		// Any other status (e.g. InvalidArgument for empty token) means TLS handshake
-		// succeeded — the gateway accepted the client cert.
+		logger.WarningfCtx(ctx, "worker join: credential check: read ca.crt: %v", err)
+		return false
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		logger.WarningfCtx(ctx, "worker join: credential check: parse ca.crt failed")
+		return false
+	}
+	_, err = leaf.Verify(x509.VerifyOptions{Roots: pool})
+	if err != nil {
+		logger.WarningfCtx(ctx, "worker join: credential check: cert not trusted by stored CA: %v", err)
+		return false
 	}
 	return true
 }
@@ -433,4 +428,3 @@ func sendHeartbeat(stream grpc.BidiStreamingClient[workerpb.CommandResult, worke
 		IsHeartbeat: true,
 	})
 }
-
